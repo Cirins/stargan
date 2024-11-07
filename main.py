@@ -74,10 +74,10 @@ if __name__ == '__main__':
     parser.add_argument('--augment', type=str2bool, default=False, help='apply data augmentation')
 
     # Step size.
-    parser.add_argument('--log_step', type=int, default=10)
-    parser.add_argument('--sample_step', type=int, default=100)
-    parser.add_argument('--model_save_step', type=int, default=1000)
-    parser.add_argument('--eval_step', type=int, default=1000)
+    parser.add_argument('--log_step', type=int, default=100)
+    parser.add_argument('--sample_step', type=int, default=1000)
+    parser.add_argument('--model_save_step', type=int, default=10000)
+    parser.add_argument('--eval_step', type=int, default=10000)
     parser.add_argument('--lr_update_step', type=int, default=-1, help='lr update step, set -1 to disable')
 
     args = parser.parse_args()

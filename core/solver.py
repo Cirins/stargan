@@ -388,15 +388,13 @@ class Solver(object):
                 x_reconst = self.G(x_fake, y_src_oh)
                 g_loss_rec = torch.mean(torch.abs(x_real - x_reconst))
 
-                # Domain classification loss.
-                if self.mode == 'train':
-                    out_dom = self.domain_classifier_df(x_fake, y_trg)
-                    g_loss_dom = F.cross_entropy(out_dom, k_src)
-                else:
-                    g_loss_dom = 0
+                # # Domain classification loss.
+                # out_dom = self.domain_classifier_df(x_fake, y_trg)
+                # g_loss_dom = F.cross_entropy(out_dom, k_src)
 
                 # Backward and optimize.
-                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
+                # g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
+                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls
                 self.reset_grad()
                 g_loss.backward()
                 self.g_optimizer.step()
@@ -405,7 +403,7 @@ class Solver(object):
                 loss['G/loss_fake'] = g_loss_fake.item()
                 loss['G/loss_rec'] = g_loss_rec.item()
                 loss['G/loss_cls'] = g_loss_cls.item()
-                loss['G/loss_dom'] = g_loss_dom.item() if self.mode == 'train' else 0
+                # loss['G/loss_dom'] = g_loss_dom.item()
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #
