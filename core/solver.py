@@ -59,6 +59,7 @@ class Solver(object):
         self.d_lr_step = self.d_lr / self.total_decay_steps
 
         # Miscellaneous.
+        self.mode = args.mode
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.aumgent = args.augment
 
@@ -388,8 +389,11 @@ class Solver(object):
                 g_loss_rec = torch.mean(torch.abs(x_real - x_reconst))
 
                 # Domain classification loss.
-                out_dom = self.domain_classifier_df(x_fake, y_trg)
-                g_loss_dom = F.cross_entropy(out_dom, k_src)
+                if self.mode == 'train':
+                    out_dom = self.domain_classifier_df(x_fake, y_trg)
+                    g_loss_dom = F.cross_entropy(out_dom, k_src)
+                else:
+                    g_loss_dom = 0
 
                 # Backward and optimize.
                 g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
@@ -401,7 +405,7 @@ class Solver(object):
                 loss['G/loss_fake'] = g_loss_fake.item()
                 loss['G/loss_rec'] = g_loss_rec.item()
                 loss['G/loss_cls'] = g_loss_cls.item()
-                loss['G/loss_dom'] = g_loss_dom.item()
+                loss['G/loss_dom'] = g_loss_dom.item() if self.mode == 'train' else 0
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #

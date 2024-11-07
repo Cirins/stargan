@@ -13,6 +13,8 @@ class train_dataset(data.Dataset):
             x, y, k = pickle.load(f)
 
         if finetune:
+            print('Finetuning...')
+            
             with open(f'data/{dataset}_fs.pkl', 'rb') as f:
                 fs = pickle.load(f)
             
