@@ -19,11 +19,11 @@ def run_evaluation(step, G, args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    domain_classifier_te = DomainClassifier(args.num_channels, args.num_dp_domains, args.num_classes, args.num_timesteps)
-    filename = f'pretrained_nets/domain_classifier_{args.dataset}_dp.ckpt'
-    domain_classifier_te.load_state_dict(torch.load(filename, map_location=device))
-    # domain_classifier_te.load_state_dict(torch.load(filename, map_location=device, weights_only=False))
-    domain_classifier_te = domain_classifier_te.to(device)
+    # domain_classifier_te = DomainClassifier(args.num_channels, args.num_dp_domains, args.num_classes, args.num_timesteps)
+    # filename = f'pretrained_nets/domain_classifier_{args.dataset}_dp.ckpt'
+    # domain_classifier_te.load_state_dict(torch.load(filename, map_location=device))
+    # # domain_classifier_te.load_state_dict(torch.load(filename, map_location=device, weights_only=False))
+    # domain_classifier_te = domain_classifier_te.to(device)
 
     # siamese_net_te = SiameseNet(args.num_channels, args.num_classes, args.num_timesteps)
     # filename = f'pretrained_nets/siamese_net_{args.dataset}_dp.ckpt'
@@ -60,10 +60,9 @@ def run_evaluation(step, G, args):
             with torch.no_grad():
                 x_fake = G(x_src, y_trg_oh.to(device))
 
-            calculate_domain_scores(domain_classifier_te, x_fake, y_trg, k_src, src_class, trg_class, step, args)
+            # calculate_domain_scores(domain_classifier_te, x_fake, y_trg, k_src, src_class, trg_class, step, args)
             # calculate_dist_scores(siamese_net_te, x_fake, y_trg, k_src, src_class, trg_class, step, args)
             
-
             syn_data.append(x_fake)
             syn_labels.append(y_trg)
             syn_doms.append(k_src)

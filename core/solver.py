@@ -80,7 +80,7 @@ class Solver(object):
         self.log_file = os.path.join(self.log_dir, 'log.csv')
         file_exists = os.path.isfile(self.log_file)
         with open(self.log_file, 'a', newline='') as csvfile:
-            fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in ['loss_real', 'loss_fake', 'loss_cls', 'loss_gp']] + [f'G/{key}' for key in ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom']]
+            fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in ['loss_real', 'loss_fake', 'loss_cls', 'loss_gp']] + [f'G/{key}' for key in ['loss_fake', 'loss_rec', 'loss_cls']]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
                 writer.writeheader()
@@ -101,13 +101,13 @@ class Solver(object):
         self.G.to(self.device)
         self.D.to(self.device)
 
-        # Load the pretrained domain classifier
-        print('Loading the pretrained domain classifier...')
-        self.domain_classifier_df = DomainClassifier(self.num_channels, self.num_df_domains, self.num_classes, self.num_timesteps)
-        # self.domain_classifier_df.load_state_dict(torch.load(f'pretrained_nets/domain_classifier_{self.dataset}_df.ckpt', map_location=self.device, weights_only=False))
-        self.domain_classifier_df.load_state_dict(torch.load(f'pretrained_nets/domain_classifier_{self.dataset}_df.ckpt', map_location=self.device))
-        self.domain_classifier_df.eval()
-        self.domain_classifier_df.to(self.device)
+        # # Load the pretrained domain classifier
+        # print('Loading the pretrained domain classifier...')
+        # self.domain_classifier_df = DomainClassifier(self.num_channels, self.num_df_domains, self.num_classes, self.num_timesteps)
+        # # self.domain_classifier_df.load_state_dict(torch.load(f'pretrained_nets/domain_classifier_{self.dataset}_df.ckpt', map_location=self.device, weights_only=False))
+        # self.domain_classifier_df.load_state_dict(torch.load(f'pretrained_nets/domain_classifier_{self.dataset}_df.ckpt', map_location=self.device))
+        # self.domain_classifier_df.eval()
+        # self.domain_classifier_df.to(self.device)
 
     def print_network(self, model, name):
         """Print out the network information."""
@@ -198,12 +198,12 @@ class Solver(object):
         N = data.size(0)
         ncols = 2 * self.num_classes
         nrows = N // ncols
-        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 2.5))
+        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 2.5), sharex=True, sharey=True)
         axs = axs.flatten()
         for idx in range(N):
             for i in range(data.size(1)):
                 axs[idx].plot(data[idx, i, :].detach().cpu().numpy(), label=self.channel_names[i], linewidth=0.7)
-            axs[idx].set_ylim(0, 1)
+            # axs[idx].set_ylim(0, 1)
             axs[idx].axis('off')
             axs[idx].set_title(f'{self.class_names[labels[idx].item()]}')
             if idx < ncols:
