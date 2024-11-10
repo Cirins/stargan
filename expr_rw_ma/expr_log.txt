@@ -1,5 +1,2 @@
-01 - Brave2: raw
-02 - Iron1: lr decay -> bad
-03 - Iron2: dom_loss -> bad
-04 - Maxthon: augmentation -> bad, low reconstr lambda?
-05 - finetuning
+01, Iridium2, dom=0, train -> 0.6628, 1.8870, 0.0255
+02, Brave1, dom=1, train -> 0.6451, 2.4896, 0.0276

@@ -1,0 +1,5 @@
+01 - Brave2: raw
+02 - Iron1: lr decay -> bad
+03 - Iron2: dom_loss -> bad
+04 - Maxthon: augmentation -> bad, low reconstr lambda?
+05 - finetuning

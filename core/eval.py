@@ -19,11 +19,10 @@ def run_evaluation(step, G, args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # domain_classifier_te = DomainClassifier(args.num_channels, args.num_dp_domains, args.num_classes, args.num_timesteps)
-    # filename = f'pretrained_nets/domain_classifier_{args.dataset}_dp.ckpt'
-    # domain_classifier_te.load_state_dict(torch.load(filename, map_location=device))
-    # # domain_classifier_te.load_state_dict(torch.load(filename, map_location=device, weights_only=False))
-    # domain_classifier_te = domain_classifier_te.to(device)
+    domain_classifier_te = DomainClassifier(args.num_channels, args.num_dp_domains, args.num_classes, args.num_timesteps)
+    filename = f'pretrained_nets/domain_classifier_{args.dataset}_dp.ckpt'
+    domain_classifier_te.load_state_dict(torch.load(filename, map_location=device))
+    domain_classifier_te = domain_classifier_te.to(device)
 
     # siamese_net_te = SiameseNet(args.num_channels, args.num_classes, args.num_timesteps)
     # filename = f'pretrained_nets/siamese_net_{args.dataset}_dp.ckpt'
@@ -60,7 +59,7 @@ def run_evaluation(step, G, args):
             with torch.no_grad():
                 x_fake = G(x_src, y_trg_oh.to(device))
 
-            # calculate_domain_scores(domain_classifier_te, x_fake, y_trg, k_src, src_class, trg_class, step, args)
+            calculate_domain_scores(domain_classifier_te, x_fake, y_trg, k_src, src_class, trg_class, step, args)
             # calculate_dist_scores(siamese_net_te, x_fake, y_trg, k_src, src_class, trg_class, step, args)
             
             syn_data.append(x_fake)
@@ -73,7 +72,7 @@ def run_evaluation(step, G, args):
 
         calculate_classification_scores(syn_data, syn_labels, syn_doms, src_class, trg_classes, step, args)
 
-    print('Total time taken:', time.time() - start_time, '\n')
+    print(f'Total time taken: {time.time() - start_time:.2f} seconds\n')
 
 
 
@@ -318,7 +317,7 @@ def calculate_classification_scores(syn_data, syn_labels, syn_doms, src_class, t
         syn_labels_dom = syn_labels[syn_doms == domain]
         trg_labels_dom = trg_labels[trg_doms == domain]
 
-        print(f'\nSource: {src_class}, Domain: {domain}, Target: {trg_classes}, Syn data: {syn_data_dom.shape}, Trg data: {trg_data_dom.shape}')
+        print(f'\nSource: {src_class}, Domain: {domain+args.num_df_domains}, Target: {trg_classes}, Syn data: {syn_data_dom.shape}, Trg data: {trg_data_dom.shape}')
         
         label_mapping = {old_label: new_label for new_label, old_label in enumerate(np.unique(syn_labels))}
         syn_labels_dom = np.array([label_mapping[x] for x in syn_labels_dom])

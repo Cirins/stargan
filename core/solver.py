@@ -1,6 +1,5 @@
-from core.model import Generator, Discriminator, DomainClassifier
+from core.model import Generator, Discriminator
 from core.eval import run_evaluation
-from core.augment import augment_data
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -60,8 +59,8 @@ class Solver(object):
 
         # Miscellaneous.
         self.mode = args.mode
+        self.finetune = args.finetune
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.aumgent = args.augment
 
         # Directories.
         self.expr_dir = args.expr_dir
@@ -77,37 +76,36 @@ class Solver(object):
         self.eval_step = args.eval_step
 
         # Initialize CSV file for logging
-        self.log_file = os.path.join(self.log_dir, 'log.csv')
-        file_exists = os.path.isfile(self.log_file)
-        with open(self.log_file, 'a', newline='') as csvfile:
-            fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in ['loss_real', 'loss_fake', 'loss_cls', 'loss_gp']] + [f'G/{key}' for key in ['loss_fake', 'loss_rec', 'loss_cls']]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            if not file_exists:
-                writer.writeheader()
+        self.initialize_csv_log()
 
         # Build the model.
         self.build_model()
 
+    def initialize_csv_log(self):
+        """Initialize CSV file for logging."""
+        self.log_file = os.path.join(self.log_dir, 'log.csv')
+        file_exists = os.path.isfile(self.log_file)
+        with open(self.log_file, 'a', newline='') as csvfile:
+            d_keys = ['loss_real', 'loss_fake', 'loss_cls', 'loss_gp', 'loss_dom']
+            g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom']
+            fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in d_keys] + [f'G/{key}' for key in g_keys]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+
     def build_model(self):
         """Create a generator and a discriminator."""
         self.G = Generator(self.g_conv_dim, self.num_classes, self.g_repeat_num)
-        self.D = Discriminator(self.num_timesteps, self.d_conv_dim, self.num_classes, self.d_repeat_num)
+        num_domains = self.num_dp_domains if self.finetune else self.num_df_domains
+        self.D = Discriminator(self.num_timesteps, self.d_conv_dim, self.num_classes, num_domains, self.d_repeat_num)
 
         self.g_optimizer = torch.optim.Adam(self.G.parameters(), self.g_lr, [self.beta1, self.beta2])
         self.d_optimizer = torch.optim.Adam(self.D.parameters(), self.d_lr, [self.beta1, self.beta2])
-        self.print_network(self.G, 'G')
-        self.print_network(self.D, 'D')
+        self.print_network(self.G, 'Generator')
+        self.print_network(self.D, 'Discriminator')
             
         self.G.to(self.device)
         self.D.to(self.device)
-
-        # # Load the pretrained domain classifier
-        # print('Loading the pretrained domain classifier...')
-        # self.domain_classifier_df = DomainClassifier(self.num_channels, self.num_df_domains, self.num_classes, self.num_timesteps)
-        # # self.domain_classifier_df.load_state_dict(torch.load(f'pretrained_nets/domain_classifier_{self.dataset}_df.ckpt', map_location=self.device, weights_only=False))
-        # self.domain_classifier_df.load_state_dict(torch.load(f'pretrained_nets/domain_classifier_{self.dataset}_df.ckpt', map_location=self.device))
-        # self.domain_classifier_df.eval()
-        # self.domain_classifier_df.to(self.device)
 
     def print_network(self, model, name):
         """Print out the network information."""
@@ -115,8 +113,7 @@ class Solver(object):
         for p in model.parameters():
             num_params += p.numel()
         # print(model)
-        # print(name)
-        # print("The number of parameters: {}".format(num_params))
+        print(f'The number of parameters of the {name} is {num_params}')
 
     def restore_model(self, resume_iters):
         """Restore the trained generator and discriminator."""
@@ -124,7 +121,45 @@ class Solver(object):
         G_path = os.path.join(self.model_save_dir, '{}-G.ckpt'.format(resume_iters))
         D_path = os.path.join(self.model_save_dir, '{}-D.ckpt'.format(resume_iters))
         self.G.load_state_dict(torch.load(G_path, map_location=lambda storage, loc: storage))
-        self.D.load_state_dict(torch.load(D_path, map_location=lambda storage, loc: storage))
+        
+        if self.finetune:
+            # Load discriminator weights except for conv_dom
+            D_state_dict = torch.load(D_path, map_location=lambda storage, loc: storage)
+            D_state_dict = {k: v for k, v in D_state_dict.items() if not k.startswith('layers.conv_dom')}
+            self.D.load_state_dict(D_state_dict, strict=False)
+            
+            # Reinitialize conv_dom layer
+            self.D.reinitialize_last_layer()
+
+            # Make only conv_src, conv_cls, and conv_dom trainable
+            for name, param in self.D.named_parameters():
+                if not (name.startswith('layers.conv_src') or name.startswith('layers.conv_cls') or name.startswith('layers.conv_dom')):
+                    param.requires_grad = False
+
+            # Make only upsampling layers and the last conv layer of G trainable
+            for name, param in self.G.named_parameters():
+                if not (name.startswith('layers.upsample') or name.startswith('layers.final')):
+                    param.requires_grad = False
+
+            # Print the trainable layers of G and D
+            print('Trainable layers of G:')
+            for name, param in self.G.named_parameters():
+                if param.requires_grad:
+                    print(name)
+            print('Trainable layers of D:')
+            for name, param in self.D.named_parameters():
+                if param.requires_grad:
+                    print(name)
+            
+            # Move the models to the device
+            self.D.to(self.device)
+            self.G.to(self.device)
+
+            # Update optimizers to include only trainable parameters
+            self.g_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.G.parameters()), self.g_lr, [self.beta1, self.beta2])
+            self.d_optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.D.parameters()), self.d_lr, [self.beta1, self.beta2])
+        else:
+            self.D.load_state_dict(torch.load(D_path, map_location=lambda storage, loc: storage))
 
     def update_lr(self, g_lr, d_lr):
         """Decay learning rates of the generator and discriminator."""
@@ -198,12 +233,12 @@ class Solver(object):
         N = data.size(0)
         ncols = 2 * self.num_classes
         nrows = N // ncols
-        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 2.5), sharex=True, sharey=True)
+        fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 2.5))
         axs = axs.flatten()
         for idx in range(N):
             for i in range(data.size(1)):
                 axs[idx].plot(data[idx, i, :].detach().cpu().numpy(), label=self.channel_names[i], linewidth=0.7)
-            # axs[idx].set_ylim(0, 1)
+            axs[idx].set_ylim(0, 1)
             axs[idx].axis('off')
             axs[idx].set_title(f'{self.class_names[labels[idx].item()]}')
             if idx < ncols:
@@ -255,43 +290,11 @@ class Solver(object):
                     return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device)
         return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device)
     
-    def augment_data(self, data):
-        B, M, T = data.shape
-        augmented_data = torch.zeros_like(data).to(self.device)
-
-        for i in range(B):
-            acc = data[i, :, :]
-
-            # Random channel swapping
-            permuted_indices = torch.randperm(M)  # Get a random permutation of channels
-            acc = acc[permuted_indices, :]
-
-            # Independent mirroring for each channel
-            for j in range(M):
-                if torch.rand(1).item() > 0.5:  # 50% chance to mirror each channel independently
-                    acc[j, :] = 1 - acc[j, :]  # Mirror by flipping around y = 0.5
-
-            # Assign to augmented_data
-            augmented_data[i, :, :] = acc
-
-        return augmented_data
-
     def train(self):
         """Train StarGAN within a single dataset."""
         # Set data loaders.
         train_loader = self.train_loader
         test_loader = self.test_loader
-
-        # Fetch fixed inputs.
-        x_train_fix, y_train_fix = self.get_fixed_time_series(train_loader)
-        x_train_fix = x_train_fix.to(self.device)
-        y_train_fix = y_train_fix.to(self.device)
-        x_test_fix, y_test_fix = self.get_fixed_time_series(test_loader)
-        x_test_fix = x_test_fix.to(self.device)
-        y_test_fix = y_test_fix.to(self.device)
-
-        self.sample_time_series(x_train_fix, y_train_fix, 0, 'train')
-        self.sample_time_series(x_test_fix, y_test_fix, 0, 'test')
 
         # Learning rate cache for decaying.
         g_lr = self.g_lr
@@ -302,6 +305,14 @@ class Solver(object):
         if self.resume_iters:
             start_iters = self.resume_iters
             self.restore_model(self.resume_iters)
+
+        # Fetch fixed inputs.
+        x_train_fix, y_train_fix = self.get_fixed_time_series(train_loader)
+        x_train_fix = x_train_fix.to(self.device)
+        y_train_fix = y_train_fix.to(self.device)
+        x_test_fix, y_test_fix = self.get_fixed_time_series(test_loader)
+        x_test_fix = x_test_fix.to(self.device)
+        y_test_fix = y_test_fix.to(self.device)
 
         # Get the last elapsed time from the log file
         initial_elapsed_time = self.get_last_elapsed_time()
@@ -321,10 +332,6 @@ class Solver(object):
             except:
                 data_iter = iter(train_loader)
                 x_real, y_src, k_src = next(data_iter)
-            
-            # Augment the data
-            if self.aumgent:
-                x_real = self.augment_data(x_real)
 
             # Generate target class labels randomly.
             rand_idx = torch.randperm(y_src.size(0))
@@ -345,23 +352,24 @@ class Solver(object):
             # =================================================================================== #
 
             # Compute loss with real time series.
-            out_src, out_cls = self.D(x_real)
+            out_src, out_cls, out_dom = self.D(x_real)
             d_loss_real = - torch.mean(out_src)
             d_loss_cls = F.cross_entropy(out_cls, y_src)
+            d_loss_dom = F.cross_entropy(out_dom, k_src)
 
             # Compute loss with fake time series.
             x_fake = self.G(x_real, y_trg_oh)
-            out_src, out_cls = self.D(x_fake.detach())
+            out_src, out_cls, out_dom = self.D(x_fake.detach())
             d_loss_fake = torch.mean(out_src)
 
             # Compute loss for gradient penalty.
             alpha = torch.rand(x_real.size(0), 1, 1).to(self.device)
             x_hat = (alpha * x_real.data + (1 - alpha) * x_fake.data).requires_grad_(True)
-            out_src, _ = self.D(x_hat)
+            out_src, _, _ = self.D(x_hat)
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
 
             # Backward and optimize.
-            d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp
+            d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom
             self.reset_grad()
             d_loss.backward()
             self.d_optimizer.step()
@@ -372,6 +380,7 @@ class Solver(object):
             loss['D/loss_fake'] = d_loss_fake.item()
             loss['D/loss_cls'] = d_loss_cls.item()
             loss['D/loss_gp'] = d_loss_gp.item()
+            loss['D/loss_dom'] = d_loss_dom.item()
             
             # =================================================================================== #
             #                               3. Train the generator                                #
@@ -380,21 +389,17 @@ class Solver(object):
             if (i+1) % self.n_critic == 0:
                 # Original-to-target class.
                 x_fake = self.G(x_real, y_trg_oh)
-                out_src, out_cls = self.D(x_fake)
+                out_src, out_cls, out_dom = self.D(x_fake)
                 g_loss_fake = - torch.mean(out_src)
                 g_loss_cls = F.cross_entropy(out_cls, y_trg)
+                g_loss_dom = F.cross_entropy(out_dom, k_src)
 
                 # Target-to-original class.
                 x_reconst = self.G(x_fake, y_src_oh)
                 g_loss_rec = torch.mean(torch.abs(x_real - x_reconst))
 
-                # # Domain classification loss.
-                # out_dom = self.domain_classifier_df(x_fake, y_trg)
-                # g_loss_dom = F.cross_entropy(out_dom, k_src)
-
                 # Backward and optimize.
-                # g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
-                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls
+                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
                 self.reset_grad()
                 g_loss.backward()
                 self.g_optimizer.step()
@@ -403,7 +408,7 @@ class Solver(object):
                 loss['G/loss_fake'] = g_loss_fake.item()
                 loss['G/loss_rec'] = g_loss_rec.item()
                 loss['G/loss_cls'] = g_loss_cls.item()
-                # loss['G/loss_dom'] = g_loss_dom.item()
+                loss['G/loss_dom'] = g_loss_dom.item()
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #

@@ -58,7 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_df_domains', type=int, required=True, help='number of domains in Df')
     parser.add_argument('--num_dp_domains', type=int, required=True, help='number of domains in Dp')
     parser.add_argument('--batch_size', type=int, default=16, help='mini-batch size')
-    parser.add_argument('--num_iters', type=int, default=200000, help='number of total iterations for training D')
+    parser.add_argument('--num_iters', type=int, default=1000000, help='number of total iterations for training D')
     parser.add_argument('--num_iters_decay', type=int, default=100000, help='number of iterations for decaying lr')
     parser.add_argument('--g_lr', type=float, default=0.0001, help='learning rate for G')
     parser.add_argument('--d_lr', type=float, default=0.0001, help='learning rate for D')
@@ -71,7 +71,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'finetune'])
     parser.add_argument('--seed', type=int, default=2710, help='random seed for training')
-    parser.add_argument('--augment', type=str2bool, default=False, help='apply data augmentation')
 
     # Step size.
     parser.add_argument('--log_step', type=int, default=100)

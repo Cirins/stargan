@@ -26,7 +26,7 @@ class train_dataset(data.Dataset):
             # Define train dataset
             x_train = x[k >= num_df_domains]
             y_train = y[k >= num_df_domains]
-            k_train = k[k >= num_df_domains]
+            k_train = k[k >= num_df_domains] - num_df_domains
 
         else:
             # Define train dataset
