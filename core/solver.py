@@ -32,6 +32,7 @@ class Solver(object):
         self.lambda_rec = args.lambda_rec
         self.lambda_gp = args.lambda_gp
         self.lambda_dom = args.lambda_dom
+        self.lambda_rot = args.lambda_rot
 
         # Training configurations.
         self.dataset = args.dataset
@@ -51,6 +52,9 @@ class Solver(object):
         self.beta1 = args.beta1
         self.beta2 = args.beta2
         self.resume_iters = args.resume_iters
+        self.augment = args.augment
+        if self.augment:
+            raise NotImplementedError('Augmentation is not implemented yet')
 
         # Learning rate decay.
         self.total_decay_steps = (self.num_iters - self.num_iters_decay) // self.lr_update_step
@@ -78,6 +82,9 @@ class Solver(object):
         # Initialize CSV file for logging
         self.initialize_csv_log()
 
+        # # Initialize rotation matrices for each domain
+        # self.rotation_matrices = self.initialize_rotation_matrices()
+
         # Build the model.
         self.build_model()
 
@@ -86,8 +93,8 @@ class Solver(object):
         self.log_file = os.path.join(self.log_dir, 'log.csv')
         file_exists = os.path.isfile(self.log_file)
         with open(self.log_file, 'a', newline='') as csvfile:
-            d_keys = ['loss_real', 'loss_fake', 'loss_cls', 'loss_gp', 'loss_dom']
-            g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom']
+            d_keys = ['loss_real', 'loss_fake', 'loss_gp', 'loss_cls', 'loss_dom', 'loss_rot']
+            g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom', 'loss_rot']
             fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in d_keys] + [f'G/{key}' for key in g_keys]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
@@ -129,6 +136,7 @@ class Solver(object):
             self.D.load_state_dict(D_state_dict, strict=False)
             
             # Reinitialize conv_dom layer
+            raise NotImplementedError('conv_rot layer reinitialization is not implemented yet')
             self.D.reinitialize_last_layer()
 
             # Make only conv_src, conv_cls, and conv_dom trainable
@@ -229,7 +237,7 @@ class Solver(object):
             writer = csv.DictWriter(csvfile, fieldnames=log.keys())
             writer.writerow(log)
 
-    def save_time_series(self, data, labels, filename):
+    def save_time_series(self, data, labels, domains, filename):
         N = data.size(0)
         ncols = 2 * self.num_classes
         nrows = N // ncols
@@ -240,7 +248,7 @@ class Solver(object):
                 axs[idx].plot(data[idx, i, :].detach().cpu().numpy(), label=self.channel_names[i], linewidth=0.7)
             axs[idx].set_ylim(0, 1)
             axs[idx].axis('off')
-            axs[idx].set_title(f'{self.class_names[labels[idx].item()]}')
+            axs[idx].set_title(f'{self.class_names[labels[idx].item()]} (Domain {domains[idx].item()})')
             if idx < ncols:
                 axs[idx].legend(loc='lower left')
         for idx in range(N, len(axs)):
@@ -250,34 +258,35 @@ class Solver(object):
         plt.close()
 
     @torch.no_grad()
-    def sample_time_series(self, x_fix, y_fix, step, prefix):
+    def sample_time_series(self, x_fix, y_fix, k_fix, step, prefix):
         """Sample and save time series."""
         x_fix_list_map = [x_fix]
-        y_fix_list_map = [y_fix]
         x_fix_list_rec = [x_fix]
-        y_fix_list_rec = [y_fix]
+        y_fix_list = [y_fix]
+        k_fix_list = [k_fix]
         for y in range(self.num_classes):
             # Map original class to target class.
             y_trg = torch.tensor([y] * x_fix.size(0)).to(self.device)
             y_trg_oh = self.label2onehot(y_trg, self.num_classes)
             x_fix_list_map.append(self.G(x_fix, y_trg_oh.to(self.device)))
-            y_fix_list_map.append(y_trg)
             # Map target class to original class.
             y_src_oh = self.label2onehot(y_fix, self.num_classes)
             x_fix_list_rec.append(self.G(x_fix, y_src_oh.to(self.device)))
-            y_fix_list_rec.append(y_fix)
+            y_fix_list.append(y_fix)
+            k_fix_list.append(k_fix)
         x_fix_concat_map = torch.cat(x_fix_list_map, dim=0)
-        y_fix_concat_map = torch.cat(y_fix_list_map, dim=0)
         x_fix_concat_rec = torch.cat(x_fix_list_rec, dim=0)
-        y_fix_concat_rec = torch.cat(y_fix_list_rec, dim=0)
-        self.save_time_series(x_fix_concat_map, y_fix_concat_map, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_map.png'))
-        self.save_time_series(x_fix_concat_rec, y_fix_concat_rec, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_rec.png'))
+        y_fix_concat = torch.cat(y_fix_list, dim=0)
+        k_fix_concat = torch.cat(k_fix_list, dim=0)
+        self.save_time_series(x_fix_concat_map, y_fix_concat, k_fix_concat, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_map.png'))
+        self.save_time_series(x_fix_concat_rec, y_fix_concat, k_fix_concat, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_rec.png'))
         print(f'Saved {prefix} time series samples into {self.sample_dir}...')
 
     def get_fixed_time_series(self, loader):
         """Get fixed time series with 2 observations from each class."""
         x_fix_list = []
         y_fix_list = []
+        k_fix_list = []
         class_counts = {i: 0 for i in range(self.num_classes)}
         for x, y, k in loader:
             for i in range(x.size(0)):
@@ -285,11 +294,42 @@ class Solver(object):
                 if class_counts[label] < 2:
                     x_fix_list.append(x[i])
                     y_fix_list.append(y[i])
+                    k_fix_list.append(k[i])
                     class_counts[label] += 1
                 if all(count == 2 for count in class_counts.values()):
-                    return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device)
-        return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device)
-    
+                    return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device), torch.stack(k_fix_list).to(self.device)
+        return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device), torch.stack(k_fix_list).to(self.device)
+
+    def random_rotation_matrix(self):
+        """Generate a random rotation matrix and its angles between 0 and 1."""
+        alpha = torch.rand(1).item()
+        beta = torch.rand(1).item()
+        gamma = torch.rand(1).item()
+
+        R_x = torch.tensor([[1, 0, 0],
+                            [0, np.cos(alpha * 2 * np.pi), -np.sin(alpha * 2 * np.pi)],
+                            [0, np.sin(alpha * 2 * np.pi), np.cos(alpha * 2 * np.pi)]], device=self.device, dtype=torch.float32)
+
+        R_y = torch.tensor([[np.cos(beta * 2 * np.pi), 0, np.sin(beta * 2 * np.pi)],
+                            [0, 1, 0],
+                            [-np.sin(beta * 2 * np.pi), 0, np.cos(beta * 2 * np.pi)]], device=self.device, dtype=torch.float32)
+
+        R_z = torch.tensor([[np.cos(gamma * 2 * np.pi), -np.sin(gamma * 2 * np.pi), 0],
+                            [np.sin(gamma * 2 * np.pi), np.cos(gamma * 2 * np.pi), 0],
+                            [0, 0, 1]], device=self.device, dtype=torch.float32)
+
+        R = torch.mm(R_z, torch.mm(R_y, R_x))
+        return R, torch.tensor([alpha, beta, gamma], device=self.device)
+
+    def augment_batch(self, x_real):
+        """Apply random rotation to the batch of real time series and return the angles."""
+        min_val, max_val = -19.61, 19.61
+        x_real = x_real * (max_val - min_val) + min_val  # De-normalize
+        R, angles = self.random_rotation_matrix()
+        x_real = torch.matmul(R, x_real)  # Apply rotation
+        x_real = (x_real - min_val) / (max_val - min_val)  # Re-normalize
+        return x_real, angles
+
     def train(self):
         """Train StarGAN within a single dataset."""
         # Set data loaders.
@@ -307,12 +347,14 @@ class Solver(object):
             self.restore_model(self.resume_iters)
 
         # Fetch fixed inputs.
-        x_train_fix, y_train_fix = self.get_fixed_time_series(train_loader)
+        x_train_fix, y_train_fix, k_train_fix = self.get_fixed_time_series(train_loader)
         x_train_fix = x_train_fix.to(self.device)
         y_train_fix = y_train_fix.to(self.device)
-        x_test_fix, y_test_fix = self.get_fixed_time_series(test_loader)
+        k_train_fix = k_train_fix.to(self.device)
+        x_test_fix, y_test_fix, k_test_fix = self.get_fixed_time_series(test_loader)
         x_test_fix = x_test_fix.to(self.device)
         y_test_fix = y_test_fix.to(self.device)
+        k_test_fix = k_test_fix.to(self.device)
 
         # Get the last elapsed time from the log file
         initial_elapsed_time = self.get_last_elapsed_time()
@@ -347,29 +389,36 @@ class Solver(object):
             y_trg_oh = y_trg_oh.to(self.device)
             k_src = k_src.to(self.device)
 
+            if self.augment:
+                x_real, angles = self.augment_batch(x_real)
+                angles = angles.repeat(1, x_real.size(0)).view(-1, 3)
+            else:
+                angles = torch.zeros(x_real.size(0), 3).to(self.device)
+
             # =================================================================================== #
             #                             2. Train the discriminator                              #
             # =================================================================================== #
 
             # Compute loss with real time series.
-            out_src, out_cls, out_dom = self.D(x_real)
+            out_src, out_cls, out_dom, out_rot = self.D(x_real)
             d_loss_real = - torch.mean(out_src)
             d_loss_cls = F.cross_entropy(out_cls, y_src)
             d_loss_dom = F.cross_entropy(out_dom, k_src)
+            d_loss_rot = F.mse_loss(out_rot, angles)
 
             # Compute loss with fake time series.
             x_fake = self.G(x_real, y_trg_oh)
-            out_src, out_cls, out_dom = self.D(x_fake.detach())
+            out_src, _, _, _ = self.D(x_fake.detach())
             d_loss_fake = torch.mean(out_src)
 
             # Compute loss for gradient penalty.
             alpha = torch.rand(x_real.size(0), 1, 1).to(self.device)
             x_hat = (alpha * x_real.data + (1 - alpha) * x_fake.data).requires_grad_(True)
-            out_src, _, _ = self.D(x_hat)
+            out_src, _, _, _ = self.D(x_hat)
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
 
             # Backward and optimize.
-            d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom
+            d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom + self.lambda_rot * d_loss_rot
             self.reset_grad()
             d_loss.backward()
             self.d_optimizer.step()
@@ -381,6 +430,7 @@ class Solver(object):
             loss['D/loss_cls'] = d_loss_cls.item()
             loss['D/loss_gp'] = d_loss_gp.item()
             loss['D/loss_dom'] = d_loss_dom.item()
+            loss['D/loss_rot'] = d_loss_rot.item()
             
             # =================================================================================== #
             #                               3. Train the generator                                #
@@ -389,17 +439,18 @@ class Solver(object):
             if (i+1) % self.n_critic == 0:
                 # Original-to-target class.
                 x_fake = self.G(x_real, y_trg_oh)
-                out_src, out_cls, out_dom = self.D(x_fake)
+                out_src, out_cls, out_dom, out_rot = self.D(x_fake)
                 g_loss_fake = - torch.mean(out_src)
                 g_loss_cls = F.cross_entropy(out_cls, y_trg)
                 g_loss_dom = F.cross_entropy(out_dom, k_src)
+                g_loss_rot = F.mse_loss(out_rot, angles)
 
                 # Target-to-original class.
                 x_reconst = self.G(x_fake, y_src_oh)
                 g_loss_rec = torch.mean(torch.abs(x_real - x_reconst))
 
                 # Backward and optimize.
-                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
+                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
                 self.reset_grad()
                 g_loss.backward()
                 self.g_optimizer.step()
@@ -409,6 +460,7 @@ class Solver(object):
                 loss['G/loss_rec'] = g_loss_rec.item()
                 loss['G/loss_cls'] = g_loss_cls.item()
                 loss['G/loss_dom'] = g_loss_dom.item()
+                loss['G/loss_rot'] = g_loss_rot.item()
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #
@@ -420,8 +472,8 @@ class Solver(object):
 
             # Sample time series.
             if (i+1) % self.sample_step == 0:
-                self.sample_time_series(x_train_fix, y_train_fix, i+1, 'train')
-                self.sample_time_series(x_test_fix, y_test_fix, i+1, 'test')
+                self.sample_time_series(x_train_fix, y_train_fix, k_train_fix, i+1, 'train')
+                self.sample_time_series(x_test_fix, y_test_fix, k_test_fix, i+1, 'test')
 
             # Save model checkpoints.
             if (i+1) % self.model_save_step == 0:

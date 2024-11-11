@@ -1,2 +1,10 @@
 01, Iridium2, dom=0, train -> 0.6628, 1.8870, 0.0255
 02, Brave1, dom=1, train -> 0.6451, 2.4896, 0.0276
+
+03, Iron1, dom=0, train, augment -> 0.7027, 1.0499, 0.0366
+04, Iron2, dom=1, train, augment -> 0.6166, 1.6459, 0.0189
+
+05, Maxthon1, dom=1, train, augment, rot_equal_per_subject -> 0.7602, 1.0391, 0.0493
+
+06, Maxthon2, dom=0, rot=1, train -> 
+07, Waterfox1, dom=0, rot=10, train -> 

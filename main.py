@@ -50,6 +50,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_rec', type=float, default=10, help='weight for reconstruction loss')
     parser.add_argument('--lambda_gp', type=float, default=10, help='weight for gradient penalty')
     parser.add_argument('--lambda_dom', type=float, default=1, help='weight for domain loss')
+    parser.add_argument('--lambda_rot', type=float, default=1, help='weight for rotation loss')
     
     # Training configuration.
     parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld', 'cwru', 'realworld_mobiact'], help='dataset name')
@@ -66,6 +67,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam optimizer')
     parser.add_argument('--beta2', type=float, default=0.999, help='beta2 for Adam optimizer')
     parser.add_argument('--resume_iters', type=int, default=None, help='resume training from this step')
+    parser.add_argument('--augment', type=str2bool, default=False, help='augment data')
 
     # Miscellaneous.
     parser.add_argument('--num_workers', type=int, default=1)

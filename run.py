@@ -1,23 +1,28 @@
 import subprocess
 
-dataset = 'realworld'
 class_names = ['WAL', 'RUN', 'CLD', 'CLU']
 channel_names = ['X', 'Y', 'Z']
-num_df_domains = 10
-num_dp_domains = 5
+num_df_domains = 15
+num_dp_domains = 61
 
-mode = 'finetune'
+dataset = 'realworld_mobiact'
 
-g_lr = 1e-6
-d_lr = 1e-6
-lambda_dom = 1
+mode = 'train'
+
+g_lr = 1e-4
+d_lr = 1e-4
+
+lambda_dom = 0
+lambda_rot = 10
+
+augment = True
 
 log_step = 100
 sample_step = 1000
 model_save_step = 10000
 eval_step = 10000
 
-resume_iters = 370000
+resume_iters = 0
 
 
 
@@ -31,10 +36,12 @@ subprocess.run(['python', 'main.py',
                 '--g_lr', str(g_lr),
                 '--d_lr', str(d_lr),
                 '--lambda_dom', str(lambda_dom),
+                '--lambda_rot', str(lambda_rot),
                 '--log_step', str(log_step),
                 '--sample_step', str(sample_step),
                 '--model_save_step', str(model_save_step),
                 '--eval_step', str(eval_step),
-                '--resume_iters', str(resume_iters),
+                '--augment', str(augment),
+                # '--resume_iters', str(resume_iters),
                 ])
 
