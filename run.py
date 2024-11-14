@@ -22,7 +22,7 @@ sample_step = 1000
 model_save_step = 10000
 eval_step = 10000
 
-resume_iters = 0
+resume_iters = 180000
 
 
 
@@ -42,6 +42,6 @@ subprocess.run(['python', 'main.py',
                 '--model_save_step', str(model_save_step),
                 '--eval_step', str(eval_step),
                 '--augment', str(augment),
-                # '--resume_iters', str(resume_iters),
+                '--resume_iters', str(resume_iters),
                 ])
 

@@ -2,16 +2,16 @@ import subprocess
 
 class_names = ['WAL', 'RUN', 'CLD', 'CLU']
 channel_names = ['X', 'Y', 'Z']
-num_df_domains = 10
-num_dp_domains = 5
+num_df_domains = 15
+num_dp_domains = 61
 
-dataset = 'realworld'
+dataset = 'realworld_mobiact'
 
 mode = 'sample'
 
-syn_name = 'rw05'
+syn_name = 'rwma07'
 
-resume_iters = 560000
+resume_iters = 200000
 
 
 
