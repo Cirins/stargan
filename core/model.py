@@ -68,6 +68,15 @@ class Generator(nn.Module):
         for layer in self.layers.values():
             x = layer(x)
         return x
+    
+
+class Lambda_layer(nn.Module):
+    def __init__(self, func):
+        super(Lambda_layer, self).__init__()
+        self.func = func
+
+    def forward(self, x):
+        return self.func(x)
 
 
 class Discriminator(nn.Module):
@@ -96,8 +105,11 @@ class Discriminator(nn.Module):
         self.layers['conv_cls'] = nn.Conv1d(curr_dim, num_classes, kernel_size=kernel_size, bias=False)
         self.layers['conv_dom'] = nn.Conv1d(curr_dim, num_domains, kernel_size=kernel_size, bias=False)
         self.layers['conv_rot'] = nn.Sequential(
-            nn.Conv1d(curr_dim, 3, kernel_size=kernel_size, bias=False),
-            nn.Sigmoid()
+            nn.Conv1d(curr_dim, curr_dim // 2, kernel_size=kernel_size, bias=False),
+            nn.LeakyReLU(0.01),
+            nn.Flatten(),
+            nn.Linear(curr_dim // 2, 4),
+            Lambda_layer(lambda x: F.normalize(x, p=2, dim=-1))
         )
         
     def forward(self, x):

@@ -6,5 +6,5 @@
 
 05, Maxthon1, dom=1, train, augment, rot_equal_per_subject -> 0.7602, 1.0391, 0.0493
 
-06, Maxthon2, dom=0, rot=1, train -> 
-07, Waterfox1, dom=0, rot=10, train -> 
+06, Chrome1, dom=0, rot=10, train -> 0.7637, 1.0803, 0.0604
+07, Chrome2, dom=1, rot=10, train -> 0.7588, 1.3273, 0.0853

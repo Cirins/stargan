@@ -5,6 +5,7 @@ from core.data_loader import get_dataloaders
 import torch
 import numpy as np
 from torch.backends import cudnn
+import random
 
 
 def str2bool(v):
@@ -18,6 +19,7 @@ def main(args):
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     np.random.seed(args.seed)
+    random.seed(args.seed)
 
     # Create directories if not exist.
     os.makedirs(args.log_dir, exist_ok=True)
@@ -35,6 +37,8 @@ def main(args):
         solver.train()
     elif args.mode == 'finetune':
         solver.train()
+    elif args.mode == 'sample':
+        solver.sample(args.syn_name)
 
 
 if __name__ == '__main__':
@@ -50,7 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_rec', type=float, default=10, help='weight for reconstruction loss')
     parser.add_argument('--lambda_gp', type=float, default=10, help='weight for gradient penalty')
     parser.add_argument('--lambda_dom', type=float, default=1, help='weight for domain loss')
-    parser.add_argument('--lambda_rot', type=float, default=1, help='weight for rotation loss')
+    parser.add_argument('--lambda_rot', type=float, default=10, help='weight for rotation loss')
     
     # Training configuration.
     parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld', 'cwru', 'realworld_mobiact'], help='dataset name')
@@ -71,8 +75,9 @@ if __name__ == '__main__':
 
     # Miscellaneous.
     parser.add_argument('--num_workers', type=int, default=1)
-    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'finetune'])
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'finetune', 'sample'])
     parser.add_argument('--seed', type=int, default=2710, help='random seed for training')
+    parser.add_argument('--syn_name', type=str, default='syn', help='name of the synthetic dataset')
 
     # Step size.
     parser.add_argument('--log_step', type=int, default=100)

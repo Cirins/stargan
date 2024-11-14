@@ -12,7 +12,7 @@ mode = 'train'
 g_lr = 1e-4
 d_lr = 1e-4
 
-lambda_dom = 0
+lambda_dom = 1
 lambda_rot = 10
 
 augment = True

@@ -6,3 +6,6 @@
 05, Iridium1, dom=1+dom=1, finetune -> 0.9666, 0.1149, 0.6279
 
 06, Brave2, dom=1, finetune, lr=1e-6 -> 0.9618, 0.1244, 0.6045
+
+07, Vivaldi1, Yandex1, dom=1, ol=0.25, train -> 0.9408, 0.1831, 0.4869
+08, Vivaldi2, Yandex2, dom=1, ol=0.5, train -> 0.9479, 0.1979, 0.5705

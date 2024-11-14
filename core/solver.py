@@ -8,6 +8,8 @@ import time
 import datetime
 import csv
 import matplotlib.pyplot as plt
+import random
+import pickle
 
 
 class Solver(object):
@@ -53,8 +55,6 @@ class Solver(object):
         self.beta2 = args.beta2
         self.resume_iters = args.resume_iters
         self.augment = args.augment
-        if self.augment:
-            raise NotImplementedError('Augmentation is not implemented yet')
 
         # Learning rate decay.
         self.total_decay_steps = (self.num_iters - self.num_iters_decay) // self.lr_update_step
@@ -262,24 +262,30 @@ class Solver(object):
         """Sample and save time series."""
         x_fix_list_map = [x_fix]
         x_fix_list_rec = [x_fix]
-        y_fix_list = [y_fix]
-        k_fix_list = [k_fix]
+        y_fix_list_map = [y_fix]
+        y_fix_list_rec = [y_fix]
+        k_fix_list_map = [k_fix]
+        k_fix_list_rec = [k_fix]
         for y in range(self.num_classes):
             # Map original class to target class.
             y_trg = torch.tensor([y] * x_fix.size(0)).to(self.device)
             y_trg_oh = self.label2onehot(y_trg, self.num_classes)
             x_fix_list_map.append(self.G(x_fix, y_trg_oh.to(self.device)))
+            y_fix_list_map.append(y_trg)
+            k_fix_list_map.append(k_fix)
             # Map target class to original class.
             y_src_oh = self.label2onehot(y_fix, self.num_classes)
             x_fix_list_rec.append(self.G(x_fix, y_src_oh.to(self.device)))
-            y_fix_list.append(y_fix)
-            k_fix_list.append(k_fix)
+            y_fix_list_rec.append(y_fix)
+            k_fix_list_rec.append(k_fix)
         x_fix_concat_map = torch.cat(x_fix_list_map, dim=0)
+        y_fix_concat_map = torch.cat(y_fix_list_map, dim=0)
+        k_fix_concat_map = torch.cat(k_fix_list_map, dim=0)
         x_fix_concat_rec = torch.cat(x_fix_list_rec, dim=0)
-        y_fix_concat = torch.cat(y_fix_list, dim=0)
-        k_fix_concat = torch.cat(k_fix_list, dim=0)
-        self.save_time_series(x_fix_concat_map, y_fix_concat, k_fix_concat, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_map.png'))
-        self.save_time_series(x_fix_concat_rec, y_fix_concat, k_fix_concat, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_rec.png'))
+        y_fix_concat_rec = torch.cat(y_fix_list_rec, dim=0)
+        k_fix_concat_rec = torch.cat(k_fix_list_rec, dim=0)
+        self.save_time_series(x_fix_concat_map, y_fix_concat_map, k_fix_concat_map, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_map.png'))
+        self.save_time_series(x_fix_concat_rec, y_fix_concat_rec, k_fix_concat_rec, os.path.join(self.sample_dir, f'{step:06d}_{prefix}_rec.png'))
         print(f'Saved {prefix} time series samples into {self.sample_dir}...')
 
     def get_fixed_time_series(self, loader):
@@ -301,34 +307,45 @@ class Solver(object):
         return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device), torch.stack(k_fix_list).to(self.device)
 
     def random_rotation_matrix(self):
-        """Generate a random rotation matrix and its angles between 0 and 1."""
-        alpha = torch.rand(1).item()
-        beta = torch.rand(1).item()
-        gamma = torch.rand(1).item()
+        """Generate a random rotation matrix from a predefined set of quaternions."""
+        # Define quaternions for 90° and 180° rotations around x, y, and z axes
+        quaternions = [
+            [1, 0, 0, 0],  # 0° rotation (identity)
+            [0.7071, 0.7071, 0, 0],  # 90° rotation around x-axis
+            [0.7071, 0, 0.7071, 0],  # 90° rotation around y-axis
+            [0.7071, 0, 0, 0.7071],  # 90° rotation around z-axis
+            [0.7071, -0.7071, 0, 0],  # -90° rotation around x-axis
+            [0.7071, 0, -0.7071, 0],  # -90° rotation around y-axis
+            [0.7071, 0, 0, -0.7071],  # -90° rotation around z-axis
+            [0, 1, 0, 0],  # 180° rotation around x-axis
+            [0, 0, 1, 0],  # 180° rotation around y-axis
+            [0, 0, 0, 1],  # 180° rotation around z-axis
+        ]
 
-        R_x = torch.tensor([[1, 0, 0],
-                            [0, np.cos(alpha * 2 * np.pi), -np.sin(alpha * 2 * np.pi)],
-                            [0, np.sin(alpha * 2 * np.pi), np.cos(alpha * 2 * np.pi)]], device=self.device, dtype=torch.float32)
+        # Randomly select one quaternion
+        q = random.choice(quaternions)
 
-        R_y = torch.tensor([[np.cos(beta * 2 * np.pi), 0, np.sin(beta * 2 * np.pi)],
-                            [0, 1, 0],
-                            [-np.sin(beta * 2 * np.pi), 0, np.cos(beta * 2 * np.pi)]], device=self.device, dtype=torch.float32)
+        # Convert quaternion to rotation matrix
+        q = torch.tensor(q, device=self.device, dtype=torch.float32)
+        q = q / torch.norm(q)  # Normalize quaternion
+        q0, q1, q2, q3 = q
 
-        R_z = torch.tensor([[np.cos(gamma * 2 * np.pi), -np.sin(gamma * 2 * np.pi), 0],
-                            [np.sin(gamma * 2 * np.pi), np.cos(gamma * 2 * np.pi), 0],
-                            [0, 0, 1]], device=self.device, dtype=torch.float32)
+        R = torch.tensor([
+            [1 - 2*q2**2 - 2*q3**2, 2*q1*q2 - 2*q3*q0, 2*q1*q3 + 2*q2*q0],
+            [2*q1*q2 + 2*q3*q0, 1 - 2*q1**2 - 2*q3**2, 2*q2*q3 - 2*q1*q0],
+            [2*q1*q3 - 2*q2*q0, 2*q2*q3 + 2*q1*q0, 1 - 2*q1**2 - 2*q2**2]
+        ], device=self.device, dtype=torch.float32)
 
-        R = torch.mm(R_z, torch.mm(R_y, R_x))
-        return R, torch.tensor([alpha, beta, gamma], device=self.device)
+        return R, q
 
     def augment_batch(self, x_real):
-        """Apply random rotation to the batch of real time series and return the angles."""
+        """Apply random rotation to the batch of real time series."""
         min_val, max_val = -19.61, 19.61
         x_real = x_real * (max_val - min_val) + min_val  # De-normalize
-        R, angles = self.random_rotation_matrix()
+        R, q = self.random_rotation_matrix()
         x_real = torch.matmul(R, x_real)  # Apply rotation
         x_real = (x_real - min_val) / (max_val - min_val)  # Re-normalize
-        return x_real, angles
+        return x_real, q
 
     def train(self):
         """Train StarGAN within a single dataset."""
@@ -390,11 +407,10 @@ class Solver(object):
             k_src = k_src.to(self.device)
 
             if self.augment:
-                x_real, angles = self.augment_batch(x_real)
-                angles = angles.repeat(1, x_real.size(0)).view(-1, 3)
+                x_real, q = self.augment_batch(x_real)
             else:
-                angles = torch.zeros(x_real.size(0), 3).to(self.device)
-
+                q = torch.tensor([1, 0, 0, 0], device=self.device)
+                
             # =================================================================================== #
             #                             2. Train the discriminator                              #
             # =================================================================================== #
@@ -404,7 +420,7 @@ class Solver(object):
             d_loss_real = - torch.mean(out_src)
             d_loss_cls = F.cross_entropy(out_cls, y_src)
             d_loss_dom = F.cross_entropy(out_dom, k_src)
-            d_loss_rot = F.mse_loss(out_rot, angles)
+            d_loss_rot = F.mse_loss(out_rot, q.repeat(out_rot.size(0), 1))
 
             # Compute loss with fake time series.
             x_fake = self.G(x_real, y_trg_oh)
@@ -443,7 +459,7 @@ class Solver(object):
                 g_loss_fake = - torch.mean(out_src)
                 g_loss_cls = F.cross_entropy(out_cls, y_trg)
                 g_loss_dom = F.cross_entropy(out_dom, k_src)
-                g_loss_rot = F.mse_loss(out_rot, angles)
+                g_loss_rot = F.mse_loss(out_rot, q.repeat(out_rot.size(0), 1))
 
                 # Target-to-original class.
                 x_reconst = self.G(x_fake, y_src_oh)
@@ -494,3 +510,56 @@ class Solver(object):
                     d_lr -= self.d_lr_step
                     self.update_lr(g_lr, d_lr)
                     print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(g_lr, d_lr))
+
+    @torch.no_grad()
+    def sample(self, name):
+        """Sample time series using the trained generator."""
+        print('Start sampling...')
+        # Load the trained generator.
+        self.restore_model(self.resume_iters)
+
+        # Load the dataset
+        with open(f'data/{self.dataset}.pkl', 'rb') as f:
+            x, y, k = pickle.load(f)
+
+        with open(f'data/{self.dataset}_fs.pkl', 'rb') as f:
+            fs = pickle.load(f)
+        
+        # Filter only class 0 samples
+        x = x[y == 0]
+        k = k[y == 0]
+        fs = fs[y == 0]
+        y = y[y == 0]
+
+        print(f'Loaded class 0 data with shape {x.shape}, from {len(set(k))} domains')
+
+        # Create tensors
+        x = torch.tensor(x, dtype=torch.float32, device=self.device)
+
+        # Map x to the target classes
+        x_syn, y_syn, k_syn, fs_syn = [], [], [], []
+        for y_trg in range(1, self.num_classes):
+            print(f'Mapping class 0 to class {y_trg}...')
+            y_trg_oh = self.label2onehot(torch.tensor([y_trg] * x.size(0), device=self.device), self.num_classes)
+            x_syn.append(self.G(x, y_trg_oh))
+            y_syn.append([y_trg] * x.size(0))
+            k_syn.append(k)
+            fs_syn.append(fs)
+        x_syn = torch.cat(x_syn, dim=0).cpu().numpy()
+        y_syn = np.concatenate(y_syn)
+        k_syn = np.concatenate(k_syn)
+        fs_syn = np.concatenate(fs_syn)
+
+        # Save the synthetic samples
+        with open(f'data/{self.dataset}_{name}.pkl', 'wb') as f:
+            pickle.dump((x_syn, y_syn, k_syn), f)
+
+        with open(f'data/{self.dataset}_fs_{name}.pkl', 'wb') as f:
+            pickle.dump(fs_syn, f)
+        
+        print(f'Saved synthetic samples with shape {x_syn.shape}, from {len(set(k_syn))} domains')
+
+
+            
+
+
