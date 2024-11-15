@@ -122,7 +122,6 @@ class Discriminator(nn.Module):
 
     def reinitialize_last_layer(self):
         """Reinitialize the conv_dom layer."""
-        raise NotImplementedError("conv_rot layer is not implemented yet")
         # Flatten the nested layers to find the last convolutional layer
         def flatten_layers(layers):
             for layer in layers:
@@ -140,7 +139,3 @@ class Discriminator(nn.Module):
             raise ValueError("No Conv1d layer found in self.main")
 
         self.layers['conv_dom'] = nn.Conv1d(last_conv_layer.out_channels, self.layers['conv_dom'].out_channels, kernel_size=self.layers['conv_dom'].kernel_size, bias=False)
-        self.layers['conv_rot'] = nn.Sequential(
-            nn.Conv1d(last_conv_layer.out_channels, 3, kernel_size=self.layers['conv_rot'].kernel_size, bias=False),
-            nn.Sigmoid()
-        )

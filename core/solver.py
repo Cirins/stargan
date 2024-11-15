@@ -129,19 +129,18 @@ class Solver(object):
         D_path = os.path.join(self.model_save_dir, '{}-D.ckpt'.format(resume_iters))
         self.G.load_state_dict(torch.load(G_path, map_location=lambda storage, loc: storage))
         
-        if self.finetune:
+        if self.finetune or self.mode == 'sample':
             # Load discriminator weights except for conv_dom
             D_state_dict = torch.load(D_path, map_location=lambda storage, loc: storage)
             D_state_dict = {k: v for k, v in D_state_dict.items() if not k.startswith('layers.conv_dom')}
             self.D.load_state_dict(D_state_dict, strict=False)
             
             # Reinitialize conv_dom layer
-            raise NotImplementedError('conv_rot layer reinitialization is not implemented yet')
             self.D.reinitialize_last_layer()
 
             # Make only conv_src, conv_cls, and conv_dom trainable
             for name, param in self.D.named_parameters():
-                if not (name.startswith('layers.conv_src') or name.startswith('layers.conv_cls') or name.startswith('layers.conv_dom')):
+                if not (name.startswith('layers.conv_src') or name.startswith('layers.conv_cls') or name.startswith('layers.conv_dom') or name.startswith('layers.conv_rot')):
                     param.requires_grad = False
 
             # Make only upsampling layers and the last conv layer of G trainable

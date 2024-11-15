@@ -9,9 +9,9 @@ dataset = 'realworld_mobiact'
 
 mode = 'sample'
 
-syn_name = 'rwma07'
+syn_name = 'rwma10'
 
-resume_iters = 200000
+resume_iters = 310000
 
 
 

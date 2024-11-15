@@ -9,5 +9,7 @@
 06, Chrome1, dom=0, rot=10, train -> 0.7637, 1.0803, 0.0604
 07, Chrome2/SFCrew, dom=1, rot=10, train -> 0.7588, 1.1387, 0.0853
 
-08, Opera1, dom=0, rot=1, train -> 
-09, Opera2, dom=1, rot=1, train -> 
+08, Opera1, dom=0, rot=1, train -> 0.7813, 0.8803, 0.0556
+09, Opera2, dom=1, rot=1, train -> bad
+
+10, Iridium2, dom=0, rot=0, finetune -> 0.8172, 0.7430, 0.0658
