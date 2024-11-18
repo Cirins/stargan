@@ -13,3 +13,7 @@
 09, Opera2, dom=1, rot=1, train -> bad
 
 10, Iridium2, dom=0, rot=0, finetune -> 0.8172, 0.7430, 0.0658
+
+11, Iron1, dom=0, rot=1, lsgan, train -> bad
+
+12, Iron2, dom=0, rot=1, train -> 0.7441, 1.1807, 0.0486
