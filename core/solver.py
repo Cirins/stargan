@@ -82,9 +82,6 @@ class Solver(object):
         # Initialize CSV file for logging
         self.initialize_csv_log()
 
-        # # Initialize rotation matrices for each domain
-        # self.rotation_matrices = self.initialize_rotation_matrices()
-
         # Build the model.
         self.build_model()
 
@@ -238,8 +235,8 @@ class Solver(object):
 
     def save_time_series(self, data, labels, domains, filename):
         N = data.size(0)
-        ncols = 2 * self.num_classes
-        nrows = N // ncols
+        nrows = (self.num_classes + 1)
+        ncols = N // nrows
         fig, axs = plt.subplots(nrows, ncols, figsize=(ncols * 5, nrows * 2.5))
         axs = axs.flatten()
         for idx in range(N):
@@ -487,8 +484,9 @@ class Solver(object):
 
             # Sample time series.
             if (i+1) % self.sample_step == 0:
-                self.sample_time_series(x_train_fix, y_train_fix, k_train_fix, i+1, 'train')
-                self.sample_time_series(x_test_fix, y_test_fix, k_test_fix, i+1, 'test')
+                self.sample_time_series(x_real, y_src, k_src, i+1, 'train')
+                self.sample_time_series(x_train_fix, y_train_fix, k_train_fix, i+1, 'trainfix')
+                self.sample_time_series(x_test_fix, y_test_fix, k_test_fix, i+1, 'testfix')
 
             # Save model checkpoints.
             if (i+1) % self.model_save_step == 0:
