@@ -139,3 +139,49 @@ class Discriminator(nn.Module):
             raise ValueError("No Conv1d layer found in self.main")
 
         self.layers['conv_dom'] = nn.Conv1d(last_conv_layer.out_channels, self.layers['conv_dom'].out_channels, kernel_size=self.layers['conv_dom'].kernel_size, bias=False)
+
+
+class Rotator(nn.Module):
+    """Rotator network with shared weights."""
+    def __init__(self, num_timesteps=128, conv_dim=64, repeat_num=6, fc_dim=128):
+        super(Rotator, self).__init__()
+
+        self.shared_branch = nn.ModuleDict()
+
+        # Single initial layer
+        self.shared_branch['initial'] = nn.Sequential(
+            nn.Conv1d(3, conv_dim, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.01)
+        )
+
+        # Single set of downsampling layers
+        curr_dim = conv_dim
+        for i in range(1, repeat_num):
+            self.shared_branch[f'downsample_{i}'] = nn.Sequential(
+                nn.Conv1d(curr_dim, curr_dim*2, kernel_size=4, stride=2, padding=1),
+                nn.LeakyReLU(0.01)
+            )
+            curr_dim = curr_dim * 2
+
+        self.fc = nn.Sequential(
+            nn.Linear(curr_dim * 2 * num_timesteps // (2 ** repeat_num), fc_dim),
+            nn.LeakyReLU(0.01),
+            nn.Linear(fc_dim, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x1, x2):
+        # Process both inputs through the same branch
+        out1 = x1
+        out2 = x2
+        
+        for layer in self.shared_branch.values():
+            out1 = layer(out1)
+            out2 = layer(out2)
+
+        # Flatten and concatenate
+        out1 = out1.view(out1.size(0), -1)
+        out2 = out2.view(out2.size(0), -1)
+        out = torch.cat([out1, out2], dim=1)
+        
+        return self.fc(out)

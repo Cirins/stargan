@@ -17,3 +17,5 @@
 11, Iron1, dom=0, rot=1, lsgan, train -> bad
 
 12, Iron2, dom=0, rot=1, train -> 0.7441, 1.1807, 0.0486
+
+13, 
