@@ -10,6 +10,7 @@ import os
 import csv
 import time
 import pickle
+from sklearn.metrics import accuracy_score, f1_score
 
 
 def run_evaluation(step, G, args):
@@ -309,6 +310,7 @@ def calculate_classification_scores(syn_data, syn_labels, syn_doms, src_class, t
 
     accs = []
     loglosses = []
+    f1s = []
 
     for domain in np.unique(syn_doms):
         syn_data_dom = syn_data[syn_doms == domain]
@@ -323,16 +325,17 @@ def calculate_classification_scores(syn_data, syn_labels, syn_doms, src_class, t
         syn_labels_dom = np.array([label_mapping[x] for x in syn_labels_dom])
         trg_labels_dom = np.array([label_mapping[x] for x in trg_labels_dom])
 
-        acc, logloss = compute_accuracy(syn_data_dom, syn_labels_dom, trg_data_dom, trg_labels_dom)
+        acc, logloss, f1 = compute_accuracy(syn_data_dom, syn_labels_dom, trg_data_dom, trg_labels_dom)
 
-        print(f'Source: {src_class}, Domain: {domain}, Accuracy: {acc:.4f}, Logloss: {logloss:.4f}')
-        classification_scores = (acc, logloss)
+        print(f'Source: {src_class}, Domain: {domain}, Accuracy: {acc:.4f}, Logloss: {logloss:.4f}, F1: {f1:.4f}\n')
+        classification_scores = (acc, logloss, f1)
         save_classification_scores(classification_scores, src_class, domain, step, args.results_dir, args.num_df_domains)
 
         accs.append(acc)
         loglosses.append(logloss)
+        f1s.append(f1)
 
-    print(f'\nMean accuracy: {np.mean(accs):.4f}, Mean logloss: {np.mean(loglosses):.4f}\n\n')
+    print(f'\nMean accuracy: {np.mean(accs):.4f}, Mean logloss: {np.mean(loglosses):.4f}, Mean F1: {np.mean(f1s):.4f}\n\n')
 
     return accs, loglosses
 
@@ -349,9 +352,9 @@ def compute_accuracy(x_train, y_train, x_test, y_test):
     best_model_state = train_model(model, tr_loader, val_loader, loss_fn, optimizer, epochs=100)
     best_model = TSTRClassifier(num_timesteps=x_train.shape[2], num_channels=x_train.shape[1], num_classes=len(np.unique(y_train)))
     best_model.load_state_dict(best_model_state)
-    test_accuracy, test_loss = evaluate_model(best_model, test_loader, loss_fn)
+    test_accuracy, test_loss, test_f1 = evaluate_model(best_model, test_loader, loss_fn)
 
-    return test_accuracy, test_loss
+    return test_accuracy, test_loss, test_f1
 
 
 
@@ -384,6 +387,7 @@ def train_model(model, train_loader, val_loader, loss_fn, optimizer, epochs=300)
     accuracy_val = []
     best_loss = np.inf
     best_accuracy = 0
+    best_f1 = 0
 
     # Set up linear learning rate decay
     lambda_lr = lambda epoch: 1 - epoch / epochs
@@ -406,10 +410,11 @@ def train_model(model, train_loader, val_loader, loss_fn, optimizer, epochs=300)
         # Update learning rate
         scheduler.step()
 
-        val_accuracy, val_loss = evaluate_model(model, val_loader, loss_fn)
+        val_accuracy, val_loss, val_f1 = evaluate_model(model, val_loader, loss_fn)
         if val_accuracy > best_accuracy:
             best_epoch = epoch
             best_accuracy = val_accuracy
+            best_f1 = val_f1
             best_loss = val_loss
             best_model_state = model.state_dict().copy()
         loss_val.append(val_loss)
@@ -417,9 +422,9 @@ def train_model(model, train_loader, val_loader, loss_fn, optimizer, epochs=300)
 
         current_lr = scheduler.get_last_lr()[0]
         if (epoch+1) % 20 == 0:
-            print(f"\tEpoch {epoch + 1}/{epochs} - Train loss: {total_loss:.4f} - Val loss: {val_loss:.4f} - Val accuracy: {val_accuracy:.4f} - LR: {current_lr:.6f}")
+            print(f"\tEpoch {epoch + 1}/{epochs} - Train loss: {total_loss:.4f} - Val loss: {val_loss:.4f} - Val accuracy: {val_accuracy:.4f} - Val F1: {val_f1:.4f} - LR: {current_lr:.6f}")
     
-    print(f"\tBest epoch: {best_epoch + 1} - Best val accuracy: {best_accuracy:.4f} - Best val loss: {best_loss:.4f}")
+    print(f"\tBest epoch: {best_epoch + 1} - Best val accuracy: {best_accuracy:.4f} - Best val loss: {best_loss:.4f} - Best val F1: {best_f1:.4f}")
 
     return best_model_state
 
@@ -429,8 +434,8 @@ def evaluate_model(model, test_loader, loss_fn):
     model.to(device)
     model.eval()
     total_loss = 0
-    correct_predictions = 0
-    total_predictions = 0
+    all_preds = []
+    all_labels = []
 
     with torch.no_grad():
         for x_batch, y_batch in test_loader:
@@ -440,13 +445,16 @@ def evaluate_model(model, test_loader, loss_fn):
             total_loss += loss.item()
 
             _, predicted_labels = torch.max(outputs, 1)
-            correct_predictions += (predicted_labels == y_batch).sum().item()
-            total_predictions += len(y_batch)
+            all_preds.extend(predicted_labels.detach().cpu().numpy())
+            all_labels.extend(y_batch.detach().cpu().numpy())
 
+    all_labels = np.array(all_labels)
+    all_preds = np.array(all_preds)
+    accuracy = accuracy_score(all_labels, all_preds)        
+    f1 = f1_score(all_labels, all_preds, average='weighted')
     total_loss /= len(test_loader)
-    accuracy = correct_predictions / total_predictions
 
-    return accuracy, total_loss
+    return accuracy, total_loss, f1
 
 
 def save_domain_scores(domain_scores, src_class, trg_class, step, results_dir):
@@ -503,8 +511,8 @@ def save_classification_scores(classification_scores, src_class, domain, step, r
         writer = csv.writer(file)
         # If the file does not exist, write the header
         if not file_exists:
-            writer.writerow(['step', 'source', 'domain', 'accuracy', 'loss'])
+            writer.writerow(['step', 'source', 'domain', 'accuracy', 'loss', 'f1'])
 
-        accuracy, loss = classification_scores
+        accuracy, loss, f1 = classification_scores
         # Write the data rows
-        writer.writerow([step, src_class, domain+num_df_domains, accuracy, loss])
+        writer.writerow([step, src_class, domain+num_df_domains, accuracy, loss, f1])

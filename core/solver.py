@@ -441,20 +441,21 @@ class Solver(object):
             out_src, _, _, _ = self.D(x_hat)
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
 
-            # Compute rotation loss
-            out_rot_real0 = self.R(x_real_r1, x_real_r2)
-            r_loss_rot_real0 = F.binary_cross_entropy(out_rot_real0, torch.zeros_like(out_rot_real0))
-            out_rot_real1_r1 = self.R(x_real_r1, torch.flip(x_real_r1, dims=[0]))
-            r_loss_rot_real1_r1 = F.binary_cross_entropy(out_rot_real1_r1, torch.ones_like(out_rot_real1_r1))
-            out_rot_real1_r2 = self.R(x_real_r2, torch.flip(x_real_r2, dims=[0]))
-            r_loss_rot_real1_r2 = F.binary_cross_entropy(out_rot_real1_r2, torch.ones_like(out_rot_real1_r2))
-            r_loss_rot_real1 = (r_loss_rot_real1_r1 + r_loss_rot_real1_r2) / 2
+            # # Compute rotation loss
+            # out_rot_real0 = self.R(x_real_r1, x_real_r2)
+            # r_loss_rot_real0 = F.binary_cross_entropy(out_rot_real0, torch.zeros_like(out_rot_real0))
+            # out_rot_real1_r1 = self.R(x_real_r1, torch.flip(x_real_r1, dims=[0]))
+            # r_loss_rot_real1_r1 = F.binary_cross_entropy(out_rot_real1_r1, torch.ones_like(out_rot_real1_r1))
+            # out_rot_real1_r2 = self.R(x_real_r2, torch.flip(x_real_r2, dims=[0]))
+            # r_loss_rot_real1_r2 = F.binary_cross_entropy(out_rot_real1_r2, torch.ones_like(out_rot_real1_r2))
+            # r_loss_rot_real1 = (r_loss_rot_real1_r1 + r_loss_rot_real1_r2) / 2
 
             # Backward and optimize.
             # d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom + self.lambda_rot * d_loss_rot
             d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom
-            r_loss = self.lambda_rot * (r_loss_rot_real0 + r_loss_rot_real1)
-            total_loss = d_loss + r_loss
+            # r_loss = self.lambda_rot * (r_loss_rot_real0 + r_loss_rot_real1)
+            # total_loss = d_loss + r_loss
+            total_loss = d_loss
             self.reset_grad()
             total_loss.backward()
             self.d_optimizer.step()
@@ -467,7 +468,8 @@ class Solver(object):
             loss['D/loss_cls'] = d_loss_cls.item()
             loss['D/loss_gp'] = d_loss_gp.item()
             loss['D/loss_dom'] = d_loss_dom.item()
-            loss['D/loss_rot'] = r_loss.item()
+            # loss['D/loss_rot'] = r_loss.item()
+            loss['D/loss_rot'] = 0
             
             # =================================================================================== #
             #                               3. Train the generator                                #
@@ -486,21 +488,26 @@ class Solver(object):
                 x_reconst = self.G(x_fake_r1, y_src_oh)
                 g_loss_rec = torch.mean(torch.abs(x_real_r1 - x_reconst))
 
-                # Compute rotation loss
-                x_fake_r2 = self.G(x_real_r2, y_trg_oh)
-                out_rot_fake0 = self.R(x_fake_r1, x_fake_r2)
-                r_loss_rot_fake0 = F.binary_cross_entropy(out_rot_fake0, torch.zeros_like(out_rot_fake0))
-                out_rot_fake1_r1 = self.R(x_real_r1, x_fake_r1)
-                r_loss_rot_fake1_r1 = F.binary_cross_entropy(out_rot_fake1_r1, torch.ones_like(out_rot_fake1_r1))
-                out_rot_fake1_r2 = self.R(x_real_r2, x_fake_r2)
-                r_loss_rot_fake1_r2 = F.binary_cross_entropy(out_rot_fake1_r2, torch.ones_like(out_rot_fake1_r2))
-                r_loss_rot_fake1 = (r_loss_rot_fake1_r1 + r_loss_rot_fake1_r2) / 2
+                # # Compute rotation loss
+                # x_fake_r2 = self.G(x_real_r2, y_trg_oh)
+                # out_rot_fake0 = self.R(x_fake_r1, x_fake_r2)
+                # r_loss_rot_fake0 = F.binary_cross_entropy(out_rot_fake0, torch.zeros_like(out_rot_fake0))
+                # out_rot_fake1_r1 = self.R(x_real_r1, x_fake_r1)
+                # r_loss_rot_fake1_r1 = F.binary_cross_entropy(out_rot_fake1_r1, torch.ones_like(out_rot_fake1_r1))
+                # out_rot_fake1_r2 = self.R(x_real_r2, x_fake_r2)
+                # r_loss_rot_fake1_r2 = F.binary_cross_entropy(out_rot_fake1_r2, torch.ones_like(out_rot_fake1_r2))
+                # r_loss_rot_fake1 = (r_loss_rot_fake1_r1 + r_loss_rot_fake1_r2) / 2
+
+                # Original-to-original class.
+                x_real_r1_tilde = self.G(x_real_r1, y_src_oh)
+                g_loss_rot = torch.mean(torch.abs(x_real_r1 - x_real_r1_tilde))
 
                 # Backward and optimize.
-                # g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
-                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
-                r_loss = self.lambda_rot * (r_loss_rot_fake0 + r_loss_rot_fake1)
-                total_loss = g_loss + r_loss
+                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
+                # g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
+                # r_loss = self.lambda_rot * (r_loss_rot_fake0 + r_loss_rot_fake1)
+                # total_loss = g_loss + r_loss
+                total_loss = g_loss
                 self.reset_grad()
                 total_loss.backward()
                 self.g_optimizer.step()
@@ -510,7 +517,8 @@ class Solver(object):
                 loss['G/loss_rec'] = g_loss_rec.item()
                 loss['G/loss_cls'] = g_loss_cls.item()
                 loss['G/loss_dom'] = g_loss_dom.item()
-                loss['G/loss_rot'] = r_loss.item()
+                # loss['G/loss_rot'] = r_loss.item()
+                loss['G/loss_rot'] = g_loss_rot.item()
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #

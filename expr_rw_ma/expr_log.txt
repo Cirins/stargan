@@ -18,4 +18,7 @@
 
 12, Iron2, dom=0, rot=1, train -> 0.7441, 1.1807, 0.0486
 
-13, 
+13, Maxthon1, dom=1, rot=1(Diego), train -> 0.7602, 1.0391, 0.0493
+
+14, Maxthon2, dom=0, rot=10(rec), train -> 0.7797, 0.8627, 0.0792
+15, Waterfox1, dom=1, rot=10(rec), train -> 
