@@ -1,4 +1,4 @@
-from core.model import Generator, Discriminator, Rotator
+from core.model import Generator, Discriminator
 from core.eval import run_evaluation
 import torch
 import torch.nn.functional as F
@@ -90,7 +90,7 @@ class Solver(object):
         self.log_file = os.path.join(self.log_dir, 'log.csv')
         file_exists = os.path.isfile(self.log_file)
         with open(self.log_file, 'a', newline='') as csvfile:
-            d_keys = ['loss_real', 'loss_fake', 'loss_gp', 'loss_cls', 'loss_dom', 'loss_rot']
+            d_keys = ['loss_real', 'loss_fake', 'loss_gp', 'loss_cls', 'loss_dom']
             g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom', 'loss_rot']
             fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in d_keys] + [f'G/{key}' for key in g_keys]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -98,22 +98,18 @@ class Solver(object):
                 writer.writeheader()
 
     def build_model(self):
-        """Create a generator, a discriminator and a rotator."""
+        """Create a generator and a discriminator."""
         self.G = Generator(self.g_conv_dim, self.num_classes, self.g_repeat_num)
         num_domains = self.num_dp_domains if self.finetune else self.num_df_domains
         self.D = Discriminator(self.num_timesteps, self.d_conv_dim, self.num_classes, num_domains, self.d_repeat_num)
-        self.R = Rotator(self.num_timesteps, self.d_conv_dim, self.d_repeat_num)
 
         self.g_optimizer = torch.optim.Adam(self.G.parameters(), self.g_lr, [self.beta1, self.beta2])
         self.d_optimizer = torch.optim.Adam(self.D.parameters(), self.d_lr, [self.beta1, self.beta2])
-        self.r_optimizer = torch.optim.Adam(self.R.parameters(), self.d_lr, [self.beta1, self.beta2])
         self.print_network(self.G, 'Generator')
         self.print_network(self.D, 'Discriminator')
-        self.print_network(self.R, 'Rotator')
             
         self.G.to(self.device)
         self.D.to(self.device)
-        self.R.to(self.device)
 
     def print_network(self, model, name):
         """Print out the network information."""
@@ -171,19 +167,16 @@ class Solver(object):
             self.D.load_state_dict(torch.load(D_path, map_location=lambda storage, loc: storage))
 
     def update_lr(self, g_lr, d_lr):
-        """Decay learning rates of the generator, rotator, and discriminator."""
+        """Decay learning rates of the generator and discriminator."""
         for param_group in self.g_optimizer.param_groups:
             param_group['lr'] = g_lr
         for param_group in self.d_optimizer.param_groups:
-            param_group['lr'] = d_lr
-        for param_group in self.r_optimizer.param_groups:
             param_group['lr'] = d_lr
 
     def reset_grad(self):
         """Reset the gradient buffers."""
         self.g_optimizer.zero_grad()
         self.d_optimizer.zero_grad()
-        self.r_optimizer.zero_grad()
 
     def gradient_penalty(self, y, x):
         """Compute gradient penalty: (L2_norm(dy/dx) - 1)**2."""
@@ -412,54 +405,36 @@ class Solver(object):
             k_src = k_src.to(self.device)
 
             if self.augment:
-                x_real_r1, q1 = self.augment_batch(x_real)
-                x_real_r2, q2 = self.augment_batch(x_real)
-                while torch.allclose(q1, q2):
-                    x_real_r2, q2 = self.augment_batch(x_real)
+                x_real_r, q = self.augment_batch(x_real)
             else:
-                q1 = torch.tensor([1, 0, 0, 0], device=self.device)
+                q = torch.tensor([1, 0, 0, 0], device=self.device)
                 
             # =================================================================================== #
             #                             2. Train the discriminator                              #
             # =================================================================================== #
 
             # Compute loss with real time series.
-            out_src, out_cls, out_dom, out_rot = self.D(x_real_r1)
+            out_src, out_cls, out_dom = self.D(x_real_r)
             d_loss_real = - torch.mean(out_src)
             d_loss_cls = F.cross_entropy(out_cls, y_src)
             d_loss_dom = F.cross_entropy(out_dom, k_src)
-            # d_loss_rot = F.mse_loss(out_rot, q1.repeat(out_rot.size(0), 1))
 
             # Compute loss with fake time series.
-            x_fake_r1 = self.G(x_real_r1, y_trg_oh)
-            out_src, _, _, _ = self.D(x_fake_r1.detach())
+            x_fake = self.G(x_real_r, y_trg_oh)
+            out_src, _, _, _ = self.D(x_fake.detach())
             d_loss_fake = torch.mean(out_src)
 
             # Compute loss for gradient penalty.
-            alpha = torch.rand(x_real_r1.size(0), 1, 1).to(self.device)
-            x_hat = (alpha * x_real_r1.data + (1 - alpha) * x_fake_r1.data).requires_grad_(True)
+            alpha = torch.rand(x_real_r.size(0), 1, 1).to(self.device)
+            x_hat = (alpha * x_real_r.data + (1 - alpha) * x_fake.data).requires_grad_(True)
             out_src, _, _, _ = self.D(x_hat)
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
 
-            # # Compute rotation loss
-            # out_rot_real0 = self.R(x_real_r1, x_real_r2)
-            # r_loss_rot_real0 = F.binary_cross_entropy(out_rot_real0, torch.zeros_like(out_rot_real0))
-            # out_rot_real1_r1 = self.R(x_real_r1, torch.flip(x_real_r1, dims=[0]))
-            # r_loss_rot_real1_r1 = F.binary_cross_entropy(out_rot_real1_r1, torch.ones_like(out_rot_real1_r1))
-            # out_rot_real1_r2 = self.R(x_real_r2, torch.flip(x_real_r2, dims=[0]))
-            # r_loss_rot_real1_r2 = F.binary_cross_entropy(out_rot_real1_r2, torch.ones_like(out_rot_real1_r2))
-            # r_loss_rot_real1 = (r_loss_rot_real1_r1 + r_loss_rot_real1_r2) / 2
-
             # Backward and optimize.
-            # d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom + self.lambda_rot * d_loss_rot
             d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom
-            # r_loss = self.lambda_rot * (r_loss_rot_real0 + r_loss_rot_real1)
-            # total_loss = d_loss + r_loss
-            total_loss = d_loss
             self.reset_grad()
-            total_loss.backward()
+            d_loss.backward()
             self.d_optimizer.step()
-            self.r_optimizer.step()
 
             # Logging.
             loss = {}
@@ -468,8 +443,6 @@ class Solver(object):
             loss['D/loss_cls'] = d_loss_cls.item()
             loss['D/loss_gp'] = d_loss_gp.item()
             loss['D/loss_dom'] = d_loss_dom.item()
-            # loss['D/loss_rot'] = r_loss.item()
-            loss['D/loss_rot'] = 0
             
             # =================================================================================== #
             #                               3. Train the generator                                #
@@ -477,39 +450,24 @@ class Solver(object):
             
             if (i+1) % self.n_critic == 0:
                 # Original-to-target class.
-                x_fake_r1 = self.G(x_real_r1, y_trg_oh)
-                out_src, out_cls, out_dom, out_rot = self.D(x_fake_r1)
+                x_fake = self.G(x_real_r, y_trg_oh)
+                out_src, out_cls, out_dom = self.D(x_fake)
                 g_loss_fake = - torch.mean(out_src)
                 g_loss_cls = F.cross_entropy(out_cls, y_trg)
                 g_loss_dom = F.cross_entropy(out_dom, k_src)
-                # g_loss_rot = F.mse_loss(out_rot, q1.repeat(out_rot.size(0), 1))
 
                 # Target-to-original class.
-                x_reconst = self.G(x_fake_r1, y_src_oh)
-                g_loss_rec = torch.mean(torch.abs(x_real_r1 - x_reconst))
-
-                # # Compute rotation loss
-                # x_fake_r2 = self.G(x_real_r2, y_trg_oh)
-                # out_rot_fake0 = self.R(x_fake_r1, x_fake_r2)
-                # r_loss_rot_fake0 = F.binary_cross_entropy(out_rot_fake0, torch.zeros_like(out_rot_fake0))
-                # out_rot_fake1_r1 = self.R(x_real_r1, x_fake_r1)
-                # r_loss_rot_fake1_r1 = F.binary_cross_entropy(out_rot_fake1_r1, torch.ones_like(out_rot_fake1_r1))
-                # out_rot_fake1_r2 = self.R(x_real_r2, x_fake_r2)
-                # r_loss_rot_fake1_r2 = F.binary_cross_entropy(out_rot_fake1_r2, torch.ones_like(out_rot_fake1_r2))
-                # r_loss_rot_fake1 = (r_loss_rot_fake1_r1 + r_loss_rot_fake1_r2) / 2
+                x_reconst = self.G(x_fake, y_src_oh)
+                g_loss_rec = torch.mean(torch.abs(x_real - x_reconst))
 
                 # Original-to-original class.
-                x_real_r1_tilde = self.G(x_real_r1, y_src_oh)
-                g_loss_rot = torch.mean(torch.abs(x_real_r1 - x_real_r1_tilde))
+                x_real_r_map = self.G(x_real_r, y_src_oh)
+                g_loss_rot = torch.mean(torch.abs(x_real_r - x_real_r_map))
 
                 # Backward and optimize.
                 g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
-                # g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom
-                # r_loss = self.lambda_rot * (r_loss_rot_fake0 + r_loss_rot_fake1)
-                # total_loss = g_loss + r_loss
-                total_loss = g_loss
                 self.reset_grad()
-                total_loss.backward()
+                g_loss.backward()
                 self.g_optimizer.step()
 
                 # Logging.
@@ -517,7 +475,6 @@ class Solver(object):
                 loss['G/loss_rec'] = g_loss_rec.item()
                 loss['G/loss_cls'] = g_loss_cls.item()
                 loss['G/loss_dom'] = g_loss_dom.item()
-                # loss['G/loss_rot'] = r_loss.item()
                 loss['G/loss_rot'] = g_loss_rot.item()
 
             # =================================================================================== #
@@ -530,7 +487,7 @@ class Solver(object):
 
             # Sample time series.
             if (i+1) % self.sample_step == 0:
-                self.sample_time_series(x_real_r1, y_src, k_src, i+1, 'train')
+                self.sample_time_series(x_real_r, y_src, k_src, i+1, 'train')
                 self.sample_time_series(x_train_fix, y_train_fix, k_train_fix, i+1, 'trainfix')
                 self.sample_time_series(x_test_fix, y_test_fix, k_test_fix, i+1, 'testfix')
 

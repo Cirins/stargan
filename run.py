@@ -12,8 +12,11 @@ mode = 'train'
 g_lr = 1e-4
 d_lr = 1e-4
 
-lambda_dom = 1
+lambda_dom = 0
 lambda_rot = 10
+
+d_repeat_num = 7
+g_repeat_num = 8
 
 augment = True
 
@@ -37,6 +40,8 @@ subprocess.run(['python', 'main.py',
                 '--d_lr', str(d_lr),
                 '--lambda_dom', str(lambda_dom),
                 '--lambda_rot', str(lambda_rot),
+                '--d_repeat_num', str(d_repeat_num),
+                '--g_repeat_num', str(g_repeat_num),
                 '--log_step', str(log_step),
                 '--sample_step', str(sample_step),
                 '--model_save_step', str(model_save_step),

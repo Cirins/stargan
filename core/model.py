@@ -68,15 +68,6 @@ class Generator(nn.Module):
         for layer in self.layers.values():
             x = layer(x)
         return x
-    
-
-class Lambda_layer(nn.Module):
-    def __init__(self, func):
-        super(Lambda_layer, self).__init__()
-        self.func = func
-
-    def forward(self, x):
-        return self.func(x)
 
 
 class Discriminator(nn.Module):
@@ -98,90 +89,38 @@ class Discriminator(nn.Module):
                 nn.LeakyReLU(0.01)
             )
             curr_dim = curr_dim * 2
+        
+        self.layers['flatten'] = nn.Flatten()
 
-        kernel_size = int(num_timesteps / np.power(2, repeat_num))
         self.layers['main'] = nn.Sequential(*self.layers.values())
-        self.layers['conv_src'] = nn.Conv1d(curr_dim, 1, kernel_size=3, stride=1, padding=1, bias=False)
-        self.layers['conv_cls'] = nn.Conv1d(curr_dim, num_classes, kernel_size=kernel_size, bias=False)
-        self.layers['conv_dom'] = nn.Conv1d(curr_dim, num_domains, kernel_size=kernel_size, bias=False)
-        self.layers['conv_rot'] = nn.Sequential(
-            nn.Conv1d(curr_dim, curr_dim // 2, kernel_size=kernel_size, bias=False),
-            nn.LeakyReLU(0.01),
-            nn.Flatten(),
-            nn.Linear(curr_dim // 2, 4),
-            Lambda_layer(lambda x: F.normalize(x, p=2, dim=-1))
+
+        self.layers['src'] = nn.Sequential(
+            nn.Linear(curr_dim, curr_dim // 8),
+            nn.ReLU(),
+            nn.Linear(curr_dim // 8, curr_dim // 64),
+            nn.ReLU(),
+            nn.Linear(curr_dim // 64, 1)
+        )
+
+        self.layers['cls'] = nn.Sequential(
+            nn.Linear(curr_dim, curr_dim // 8),
+            nn.ReLU(),
+            nn.Linear(curr_dim // 8, curr_dim // 64),
+            nn.ReLU(),
+            nn.Linear(curr_dim // 64, num_classes)
+        )
+
+        self.layers['dom'] = nn.Sequential(
+            nn.Linear(curr_dim, curr_dim // 8),
+            nn.ReLU(),
+            nn.Linear(curr_dim // 8, curr_dim // 64),
+            nn.ReLU(),
+            nn.Linear(curr_dim // 64, num_domains)
         )
         
     def forward(self, x):
         h = self.layers['main'](x)
-        out_src = self.layers['conv_src'](h)
-        out_cls = self.layers['conv_cls'](h)
-        out_dom = self.layers['conv_dom'](h)
-        out_rot = self.layers['conv_rot'](h)
-        return out_src, out_cls.view(out_cls.size(0), out_cls.size(1)), out_dom.view(out_dom.size(0), out_dom.size(1)), out_rot.view(out_rot.size(0), out_rot.size(1))
-
-    def reinitialize_last_layer(self):
-        """Reinitialize the conv_dom layer."""
-        # Flatten the nested layers to find the last convolutional layer
-        def flatten_layers(layers):
-            for layer in layers:
-                if isinstance(layer, nn.Sequential):
-                    yield from flatten_layers(layer)
-                else:
-                    yield layer
-
-        last_conv_layer = None
-        for layer in flatten_layers(self.layers['main']):
-            if isinstance(layer, nn.Conv1d):
-                last_conv_layer = layer
-
-        if last_conv_layer is None:
-            raise ValueError("No Conv1d layer found in self.main")
-
-        self.layers['conv_dom'] = nn.Conv1d(last_conv_layer.out_channels, self.layers['conv_dom'].out_channels, kernel_size=self.layers['conv_dom'].kernel_size, bias=False)
-
-
-class Rotator(nn.Module):
-    """Rotator network with shared weights."""
-    def __init__(self, num_timesteps=128, conv_dim=64, repeat_num=6, fc_dim=128):
-        super(Rotator, self).__init__()
-
-        self.shared_branch = nn.ModuleDict()
-
-        # Single initial layer
-        self.shared_branch['initial'] = nn.Sequential(
-            nn.Conv1d(3, conv_dim, kernel_size=4, stride=2, padding=1),
-            nn.LeakyReLU(0.01)
-        )
-
-        # Single set of downsampling layers
-        curr_dim = conv_dim
-        for i in range(1, repeat_num):
-            self.shared_branch[f'downsample_{i}'] = nn.Sequential(
-                nn.Conv1d(curr_dim, curr_dim*2, kernel_size=4, stride=2, padding=1),
-                nn.LeakyReLU(0.01)
-            )
-            curr_dim = curr_dim * 2
-
-        self.fc = nn.Sequential(
-            nn.Linear(curr_dim * 2 * num_timesteps // (2 ** repeat_num), fc_dim),
-            nn.LeakyReLU(0.01),
-            nn.Linear(fc_dim, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x1, x2):
-        # Process both inputs through the same branch
-        out1 = x1
-        out2 = x2
-        
-        for layer in self.shared_branch.values():
-            out1 = layer(out1)
-            out2 = layer(out2)
-
-        # Flatten and concatenate
-        out1 = out1.view(out1.size(0), -1)
-        out2 = out2.view(out2.size(0), -1)
-        out = torch.cat([out1, out2], dim=1)
-        
-        return self.fc(out)
+        out_src = self.layers['src'](h)
+        out_cls = self.layers['cls'](h)
+        out_dom = self.layers['dom'](h)
+        return out_src, out_cls, out_dom
