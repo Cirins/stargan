@@ -35,6 +35,7 @@ class Solver(object):
         self.lambda_gp = args.lambda_gp
         self.lambda_dom = args.lambda_dom
         self.lambda_rot = args.lambda_rot
+        self.loss_type = args.loss_type
 
         # Training configurations.
         self.dataset = args.dataset
@@ -120,14 +121,14 @@ class Solver(object):
         print(f'The number of parameters of the {name} is {num_params}')
 
     def restore_model(self, resume_iters):
-        raise NotImplementedError
         """Restore the trained generator and discriminator."""
         print('Loading the trained models from step {}...'.format(resume_iters))
         G_path = os.path.join(self.model_save_dir, '{}-G.ckpt'.format(resume_iters))
         D_path = os.path.join(self.model_save_dir, '{}-D.ckpt'.format(resume_iters))
         self.G.load_state_dict(torch.load(G_path, map_location=lambda storage, loc: storage))
         
-        if self.finetune or self.mode == 'sample':
+        if self.finetune:
+            raise NotImplementedError('Restoring conv dom not implemented yet')
             # Load discriminator weights except for conv_dom
             D_state_dict = torch.load(D_path, map_location=lambda storage, loc: storage)
             D_state_dict = {k: v for k, v in D_state_dict.items() if not k.startswith('layers.conv_dom')}
@@ -303,6 +304,16 @@ class Solver(object):
                     return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device), torch.stack(k_fix_list).to(self.device)
         return torch.stack(x_fix_list).to(self.device), torch.stack(y_fix_list).to(self.device), torch.stack(k_fix_list).to(self.device)
 
+    def compute_gan_loss(self, out, target):
+        """Compute GAN loss."""
+        target_tensor = torch.ones_like(out) if target else torch.zeros_like(out)
+        if self.loss_type == 'gan':
+            return F.binary_cross_entropy_with_logits(out, target_tensor)
+        elif self.loss_type == 'lsgan':
+            return F.mse_loss(out, target_tensor)
+        elif self.loss_type == 'wgan-gp':
+            return -torch.mean(out) if target == 1 else torch.mean(out)
+
     def random_rotation_matrix(self):
         """Generate a random rotation matrix from a predefined set of quaternions."""
         # Define quaternions for 90° and 180° rotations around x, y, and z axes
@@ -415,19 +426,19 @@ class Solver(object):
 
             # Compute loss with real time series.
             out_src, out_cls, out_dom = self.D(x_real_r)
-            d_loss_real = - torch.mean(out_src)
+            d_loss_real = self.compute_gan_loss(out_src, 1)
             d_loss_cls = F.cross_entropy(out_cls, y_src)
             d_loss_dom = F.cross_entropy(out_dom, k_src)
 
             # Compute loss with fake time series.
             x_fake = self.G(x_real_r, y_trg_oh)
-            out_src, _, _, _ = self.D(x_fake.detach())
-            d_loss_fake = torch.mean(out_src)
+            out_src, _, _ = self.D(x_fake.detach())
+            d_loss_fake = self.compute_gan_loss(out_src, 0)
 
             # Compute loss for gradient penalty.
             alpha = torch.rand(x_real_r.size(0), 1, 1).to(self.device)
             x_hat = (alpha * x_real_r.data + (1 - alpha) * x_fake.data).requires_grad_(True)
-            out_src, _, _, _ = self.D(x_hat)
+            out_src, _, _ = self.D(x_hat)
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
 
             # Backward and optimize.
@@ -452,7 +463,7 @@ class Solver(object):
                 # Original-to-target class.
                 x_fake = self.G(x_real_r, y_trg_oh)
                 out_src, out_cls, out_dom = self.D(x_fake)
-                g_loss_fake = - torch.mean(out_src)
+                g_loss_fake = self.compute_gan_loss(out_src, 1)
                 g_loss_cls = F.cross_entropy(out_cls, y_trg)
                 g_loss_dom = F.cross_entropy(out_dom, k_src)
 

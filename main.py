@@ -55,6 +55,7 @@ if __name__ == '__main__':
     parser.add_argument('--lambda_gp', type=float, default=10, help='weight for gradient penalty')
     parser.add_argument('--lambda_dom', type=float, default=1, help='weight for domain loss')
     parser.add_argument('--lambda_rot', type=float, default=10, help='weight for rotation loss')
+    parser.add_argument('--loss_type', type=str, default='lsgan', choices=['gan', 'lsgan', 'wgan-gp'], help='type of GAN loss')
     
     # Training configuration.
     parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld', 'cwru', 'realworld_mobiact'], help='dataset name')

@@ -89,38 +89,16 @@ class Discriminator(nn.Module):
                 nn.LeakyReLU(0.01)
             )
             curr_dim = curr_dim * 2
-        
-        self.layers['flatten'] = nn.Flatten()
 
+        kernel_size = int(num_timesteps / np.power(2, repeat_num))
         self.layers['main'] = nn.Sequential(*self.layers.values())
-
-        self.layers['src'] = nn.Sequential(
-            nn.Linear(curr_dim, curr_dim // 8),
-            nn.ReLU(),
-            nn.Linear(curr_dim // 8, curr_dim // 64),
-            nn.ReLU(),
-            nn.Linear(curr_dim // 64, 1)
-        )
-
-        self.layers['cls'] = nn.Sequential(
-            nn.Linear(curr_dim, curr_dim // 8),
-            nn.ReLU(),
-            nn.Linear(curr_dim // 8, curr_dim // 64),
-            nn.ReLU(),
-            nn.Linear(curr_dim // 64, num_classes)
-        )
-
-        self.layers['dom'] = nn.Sequential(
-            nn.Linear(curr_dim, curr_dim // 8),
-            nn.ReLU(),
-            nn.Linear(curr_dim // 8, curr_dim // 64),
-            nn.ReLU(),
-            nn.Linear(curr_dim // 64, num_domains)
-        )
+        self.layers['src'] = nn.Conv1d(curr_dim, 1, kernel_size=3, stride=1, padding=1, bias=False)
+        self.layers['cls'] = nn.Conv1d(curr_dim, num_classes, kernel_size=kernel_size, bias=False)
+        self.layers['dom'] = nn.Conv1d(curr_dim, num_domains, kernel_size=kernel_size, bias=False)
         
     def forward(self, x):
         h = self.layers['main'](x)
         out_src = self.layers['src'](h)
         out_cls = self.layers['cls'](h)
         out_dom = self.layers['dom'](h)
-        return out_src, out_cls, out_dom
+        return out_src, out_cls.view(out_cls.size(0), out_cls.size(1)), out_dom.view(out_dom.size(0), out_dom.size(1))
