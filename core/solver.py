@@ -97,6 +97,8 @@ class Solver(object):
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
                 writer.writeheader()
+                # Raise a warning
+                print('Warning: Still need to be fixed')
 
     def build_model(self):
         """Create a generator and a discriminator."""

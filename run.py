@@ -12,21 +12,21 @@ mode = 'train'
 g_lr = 1e-4
 d_lr = 1e-4
 
-loss_type = 'gan'
+loss_type = 'lsgan'
 lambda_gp = 0
-n_critic = 1
+n_critic = 5
 
 lambda_dom = 0
 lambda_rot = 10
 
 augment = True
 
-log_step = 1
+log_step = 100
 sample_step = 1000
 model_save_step = 10000
 eval_step = 10000
 
-resume_iters = 0
+resume_iters = 50000
 
 
 
@@ -49,6 +49,6 @@ subprocess.run(['python', 'main.py',
                 '--model_save_step', str(model_save_step),
                 '--eval_step', str(eval_step),
                 '--augment', str(augment),
-                # '--resume_iters', str(resume_iters),
+                '--resume_iters', str(resume_iters),
                 ])
 

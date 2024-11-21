@@ -1,0 +1,34 @@
+01, Iridium2, dom=0, train -> 0.6628, 1.8870, 0.0255
+02, Brave1, dom=1, train -> 0.6451, 2.4896, 0.0276
+
+03, Iron1, dom=0, train, augment -> 0.7027, 1.0499, 0.0366
+04, Iron2, dom=1, train, augment -> 0.6166, 1.6459, 0.0189
+
+05, Maxthon1, dom=1, train, augment, rot_equal_per_subject -> 0.7602, 1.0391, 0.0493
+
+06, Chrome1, dom=0, rot=10, train -> 0.7637, 1.0803, 0.0604
+07, Chrome2/SFCrew, dom=1, rot=10, train -> 0.7588, 1.1387, 0.0853
+
+08, Opera1, dom=0, rot=1, train -> 0.7813, 0.8803, 0.0556
+09, Opera2, dom=1, rot=1, train -> bad
+
+10, Iridium2, dom=0, rot=0, finetune -> 0.8172, 0.7430, 0.0658
+
+11, Iron1, dom=0, rot=1, lsgan, train -> bad
+
+12, Iron2, dom=0, rot=1, train -> 0.7441, 1.1807, 0.0486
+
+13, Maxthon1, dom=1, rot=1(Diego), train -> 0.7602, 1.0391, 0.0493
+
+14, Maxthon2, dom=0, rot=10(rec), train -> 0.7797, 0.8627, 0.0792
+15, Waterfox1, dom=1, rot=10(rec), train -> 0.7608, 1.1272, 0.0862
+16, Waterfox2, dom=1, rot=10(rec), train -> 0.7728, 0.7233, 0.9568, 0.0843
+
+17, Vivaldi1, dom=0, rot=10, moreparam, train -> 0.7655, 0.7306, 1.0346, 0.0772
+18, Vivaldi2/Comodo2, dom=1, rot=10, moreparam, train -> 0.7526, 0.6997, 1.2532, 0.0840
+
+
+
+
+
+

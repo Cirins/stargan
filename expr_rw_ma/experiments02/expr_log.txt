@@ -1,0 +1,18 @@
+01, Yandex1, gan, n_critic=1 -> bad
+02, Yandex2, lsgan, n_critic=1 -> bad
+
+03, Slimjet1, gan, n_critic=1 -> bad
+04, Slimjet2, lsgan, n_critic=1 -> bad
+
+05, Edge1, gan, n_critic=5 -> bad
+06, Edge2/Opera2, lsgan, n_critic=5 -> 0.7507, 0.6955, 0.8045, 0.1035
+
+07, Chrome1, gan, n_critic=10 -> bad
+08, Chrome2, lsgan, n_critic=10 -> bad
+09, Opera1, wgan-gp, n_critic=10 -> 0.7645, 0.7328, 1.0492, 0.0764
+
+
+
+
+
+

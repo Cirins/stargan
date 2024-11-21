@@ -92,7 +92,7 @@ class Discriminator(nn.Module):
 
         kernel_size = int(num_timesteps / np.power(2, repeat_num))
         self.layers['main'] = nn.Sequential(*self.layers.values())
-        self.layers['src'] = nn.Conv1d(curr_dim, 1, kernel_size=3, stride=1, padding=1, bias=False)
+        self.layers['src'] = nn.Conv1d(curr_dim, 1, kernel_size=2, stride=1, padding=0, bias=False)
         self.layers['cls'] = nn.Conv1d(curr_dim, num_classes, kernel_size=kernel_size, bias=False)
         self.layers['dom'] = nn.Conv1d(curr_dim, num_domains, kernel_size=kernel_size, bias=False)
         
