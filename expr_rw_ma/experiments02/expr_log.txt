@@ -12,6 +12,9 @@
 09, Opera1, wgan-gp, n_critic=10 -> 0.7645, 0.7328, 1.0492, 0.0764
 
 
+todo: test smaller architectures, random q
+
+
 
 
 

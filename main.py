@@ -99,7 +99,7 @@ if __name__ == '__main__':
     else:
         args.finetune = False
 
-    args.expr_dir = f'expr_{args.dataset}'
+    args.expr_dir = f'expr_{args.dataset}' 
     args.log_dir = os.path.join(args.expr_dir, 'logs')
     args.model_save_dir = os.path.join(args.expr_dir, 'models')
     args.sample_dir = os.path.join(args.expr_dir, 'samples')
