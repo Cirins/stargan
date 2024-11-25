@@ -1,4 +1,4 @@
-Elapsed Time,Iteration,D/loss_real,D/loss_fake,D/loss_gp,D/loss_cls,D/loss_dom,D/loss_rot,G/loss_fake,G/loss_rec,G/loss_cls,G/loss_dom,G/loss_rot
+Elapsed Time,Iteration,D/loss_real,D/loss_fake,D/loss_cls,D/loss_gp,D/loss_dom,D/loss_rot,G/loss_fake,G/loss_rec,G/loss_cls,G/loss_dom,G/loss_rot
 0:00:08,100,-4.0528,-0.1192,1.3540,0.0230,2.7136,0.0000,0.1662,0.3026,1.4354,2.6446,0.3154
 0:00:13,200,-2.3300,-0.1930,1.3750,0.0392,2.6987,0.0000,0.3280,0.1746,1.4884,2.6315,0.1764
 0:00:18,300,-1.6185,-1.3165,1.3731,0.0189,2.7268,0.0000,1.2345,0.1535,1.4692,2.7018,0.1559

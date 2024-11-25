@@ -56,11 +56,13 @@ class Solver(object):
         self.beta2 = args.beta2
         self.resume_iters = args.resume_iters
         self.augment = args.augment
+        self.min_g_lr = args.min_g_lr
+        self.min_d_lr = args.min_d_lr
 
         # Learning rate decay.
         self.total_decay_steps = (self.num_iters - self.num_iters_decay) // self.lr_update_step
-        self.g_lr_step = self.g_lr / self.total_decay_steps
-        self.d_lr_step = self.d_lr / self.total_decay_steps
+        self.g_lr_step = (self.g_lr - self.min_g_lr) / self.total_decay_steps
+        self.d_lr_step = (self.d_lr - self.min_d_lr) / self.total_decay_steps
 
         # Miscellaneous.
         self.mode = args.mode
@@ -91,14 +93,12 @@ class Solver(object):
         self.log_file = os.path.join(self.log_dir, 'log.csv')
         file_exists = os.path.isfile(self.log_file)
         with open(self.log_file, 'a', newline='') as csvfile:
-            d_keys = ['loss_real', 'loss_fake', 'loss_gp', 'loss_cls', 'loss_dom']
+            d_keys = ['loss_real', 'loss_fake', 'loss_cls', 'loss_dom', 'loss_gp']
             g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom', 'loss_rot']
             fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in d_keys] + [f'G/{key}' for key in g_keys]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
                 writer.writeheader()
-                # Raise a warning
-                print('Warning: Still need to be fixed')
 
     def build_model(self):
         """Create a generator and a discriminator."""
@@ -318,22 +318,9 @@ class Solver(object):
 
     def random_rotation_matrix(self):
         """Generate a random rotation matrix from a predefined set of quaternions."""
-        # Define quaternions for 90° and 180° rotations around x, y, and z axes
-        quaternions = [
-            [1, 0, 0, 0],  # 0° rotation (identity)
-            [0.7071, 0.7071, 0, 0],  # 90° rotation around x-axis
-            [0.7071, 0, 0.7071, 0],  # 90° rotation around y-axis
-            [0.7071, 0, 0, 0.7071],  # 90° rotation around z-axis
-            [0.7071, -0.7071, 0, 0],  # -90° rotation around x-axis
-            [0.7071, 0, -0.7071, 0],  # -90° rotation around y-axis
-            [0.7071, 0, 0, -0.7071],  # -90° rotation around z-axis
-            [0, 1, 0, 0],  # 180° rotation around x-axis
-            [0, 0, 1, 0],  # 180° rotation around y-axis
-            [0, 0, 0, 1],  # 180° rotation around z-axis
-        ]
 
-        # Randomly select one quaternion
-        q = random.choice(quaternions)
+        # Randomly generate a quaternion
+        q = np.random.rand(4)
 
         # Convert quaternion to rotation matrix
         q = torch.tensor(q, device=self.device, dtype=torch.float32)
@@ -392,6 +379,9 @@ class Solver(object):
         start_time = time.time()
         for i in range(start_iters, self.num_iters):
 
+            # Update lambda_dom linearly
+            lambda_dom = self.lambda_dom * (i / self.num_iters)
+
             # =================================================================================== #
             #                             1. Preprocess input data                                #
             # =================================================================================== #
@@ -420,6 +410,7 @@ class Solver(object):
             if self.augment:
                 x_real_r, q = self.augment_batch(x_real)
             else:
+                x_real_r = x_real
                 q = torch.tensor([1, 0, 0, 0], device=self.device)
                 
             # =================================================================================== #
@@ -444,7 +435,7 @@ class Solver(object):
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
 
             # Backward and optimize.
-            d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + self.lambda_dom * d_loss_dom
+            d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + lambda_dom * d_loss_dom
             self.reset_grad()
             d_loss.backward()
             self.d_optimizer.step()
@@ -454,8 +445,8 @@ class Solver(object):
             loss['D/loss_real'] = d_loss_real.item()
             loss['D/loss_fake'] = d_loss_fake.item()
             loss['D/loss_cls'] = d_loss_cls.item()
-            loss['D/loss_gp'] = d_loss_gp.item()
             loss['D/loss_dom'] = d_loss_dom.item()
+            loss['D/loss_gp'] = d_loss_gp.item()
             
             # =================================================================================== #
             #                               3. Train the generator                                #
@@ -478,7 +469,7 @@ class Solver(object):
                 g_loss_rot = torch.mean(torch.abs(x_real_r - x_real_r_map))
 
                 # Backward and optimize.
-                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + self.lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
+                g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
                 self.reset_grad()
                 g_loss.backward()
                 self.g_optimizer.step()
@@ -519,8 +510,8 @@ class Solver(object):
             # Decay learning rates.
             if self.lr_update_step != -1:
                 if (i+1) % self.lr_update_step == 0 and (i+1) > (self.num_iters - self.num_iters_decay):
-                    g_lr -= self.g_lr_step
-                    d_lr -= self.d_lr_step
+                    g_lr = max(g_lr - self.g_lr_step, self.min_g_lr)
+                    d_lr = max(d_lr - self.d_lr_step, self.min_d_lr)
                     self.update_lr(g_lr, d_lr)
                     print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(g_lr, d_lr))
 
@@ -538,11 +529,12 @@ class Solver(object):
         with open(f'data/{self.dataset}_fs.pkl', 'rb') as f:
             fs = pickle.load(f)
         
-        # Filter only class 0 samples
-        x = x[y == 0]
-        k = k[y == 0]
-        fs = fs[y == 0]
-        y = y[y == 0]
+        # Filter only class 0 samples and dp domains
+        mask = (y == 0) & (k >= self.num_df_domains)
+        x = x[mask]
+        k = k[mask]
+        y = y[mask]
+        fs = fs[mask]
 
         print(f'Loaded class 0 data with shape {x.shape}, from {len(set(k))} domains')
 
@@ -567,12 +559,12 @@ class Solver(object):
         with open(f'data/{self.dataset}_{name}.pkl', 'wb') as f:
             pickle.dump((x_syn, y_syn, k_syn), f)
 
-        with open(f'data/{self.dataset}_fs_{name}.pkl', 'wb') as f:
+        with open(f'data/{self.dataset}_{name}_fs.pkl', 'wb') as f:
             pickle.dump(fs_syn, f)
         
         print(f'Saved synthetic samples with shape {x_syn.shape}, from {len(set(k_syn))} domains')
 
 
-            
+
 
 
