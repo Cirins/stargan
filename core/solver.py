@@ -516,7 +516,7 @@ class Solver(object):
                     print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(g_lr, d_lr))
 
     @torch.no_grad()
-    def sample(self, name):
+    def sample(self, name, include0=False):
         """Sample time series using the trained generator."""
         print('Start sampling...')
         # Load the trained generator.
@@ -541,8 +541,14 @@ class Solver(object):
         # Create tensors
         x = torch.tensor(x, dtype=torch.float32, device=self.device)
 
+        if include0:
+            print('Warning! Walking class included in the results!')
+            name += '_wal'
+            x_syn, y_syn, k_syn, fs_syn = [x], [y], [k], [fs]
+        else:
+            x_syn, y_syn, k_syn, fs_syn = [], [], [], []
+        
         # Map x to the target classes
-        x_syn, y_syn, k_syn, fs_syn = [], [], [], []
         for y_trg in range(1, self.num_classes):
             print(f'Mapping class 0 to class {y_trg}...')
             y_trg_oh = self.label2onehot(torch.tensor([y_trg] * x.size(0), device=self.device), self.num_classes)

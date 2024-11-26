@@ -38,7 +38,7 @@ def main(args):
     elif args.mode == 'finetune':
         solver.train()
     elif args.mode == 'sample':
-        solver.sample(args.syn_name)
+        solver.sample(args.syn_name, True)
 
 
 if __name__ == '__main__':
