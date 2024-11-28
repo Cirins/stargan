@@ -38,7 +38,7 @@ def main(args):
     elif args.mode == 'finetune':
         solver.train()
     elif args.mode == 'sample':
-        solver.sample(args.syn_name, False)
+        solver.sample(args.syn_name, args.include0)
 
 
 if __name__ == '__main__':
@@ -88,6 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'finetune', 'sample'])
     parser.add_argument('--seed', type=int, default=2710, help='random seed for training')
     parser.add_argument('--syn_name', type=str, default='syn', help='name of the synthetic dataset')
+    parser.add_argument('--include0', type=str2bool, default=False, help='include class 0 in the sampling phase')
 
     # Step size.
     parser.add_argument('--log_step', type=int, default=100)

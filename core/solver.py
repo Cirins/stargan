@@ -10,6 +10,7 @@ import csv
 import matplotlib.pyplot as plt
 import random
 import pickle
+from sklearn.model_selection import train_test_split
 
 
 class Solver(object):
@@ -526,60 +527,63 @@ class Solver(object):
         with open(f'data/{self.dataset}.pkl', 'rb') as f:
             x, y, k = pickle.load(f)
 
-        with open(f'data/{self.dataset}_fs.pkl', 'rb') as f:
-            fs = pickle.load(f)
+        print(f'Loaded full dataset with shape {x.shape}, from {len(set(k))} domains')
         
         # Filter only class 0 samples and dp domains
-        mask = (y == 0) & (k >= self.num_df_domains)
-        x = x[mask]
-        k = k[mask]
-        y = y[mask]
-        fs = fs[mask]
+        mask_dp_0 = (y == 0) & (k >= self.num_df_domains)
+        x_dp_0 = x[mask_dp_0]
+        k_dp_0 = k[mask_dp_0]
+        y_dp_0 = y[mask_dp_0]
 
-        print(f'Loaded class 0 data with shape {x.shape}, from {len(set(k))} domains')
+        print(f'Loaded class 0 data with shape {x_dp_0.shape}, from {len(set(k_dp_0))} domains and {len(set(y_dp_0))} classes')
+
+        x_dp_0_map, x_dp_0_te, k_dp_0_map, k_dp_0_te, y_dp_0_map, y_dp_0_te = train_test_split(x_dp_0, k_dp_0, y_dp_0, test_size=0.2, random_state=2710, stratify=k_dp_0, shuffle=True)
+
+        print(f'Divided class 0 data into map with shape {x_dp_0_map.shape}, from {len(set(k_dp_0_map))} domains and {len(set(y_dp_0_map))} classes')
+        print(f'And into test with shape {x_dp_0_te.shape}, from {len(set(k_dp_0_te))} domains and {len(set(y_dp_0_te))} classes')
 
         # Create tensors
-        x = torch.tensor(x, dtype=torch.float32, device=self.device)
+        x_dp_0_map = torch.tensor(x_dp_0_map, dtype=torch.float32, device=self.device)
+        k_dp_0_map = torch.tensor(k_dp_0_map, dtype=torch.long, device=self.device)
+        y_dp_0_map = torch.tensor(y_dp_0_map, dtype=torch.long, device=self.device)
 
         if include0:
-            print('Warning! Walking class included in the results!')
-            name += '_wal'
-            x_syn, y_syn, k_syn, fs_syn = [x], [y], [k], [fs]
-            wal_train = np.zeros(x.size(0), dtype=int)
-            wal_train[:x.size(0) // 2] = 1
-            np.random.shuffle(wal_train)
-            wal_train = [wal_train]
+            print('Warning! Walking class included in the map data!')
+            x_syn, y_syn, k_syn = [x_dp_0_map], [y_dp_0_map], [k_dp_0_map]
         else:
-            x_syn, y_syn, k_syn, fs_syn = [], [], [], []
-            wal_train = []
+            x_syn, y_syn, k_syn = [], [], []
 
         # Map x to the target classes
         for y_trg in range(1, self.num_classes):
             print(f'Mapping class 0 to class {y_trg}...')
-            y_trg_oh = self.label2onehot(torch.tensor([y_trg] * x.size(0), device=self.device), self.num_classes)
-            x_syn.append(self.G(x, y_trg_oh))
-            y_syn.append([y_trg] * x.size(0))
-            k_syn.append(k)
-            fs_syn.append(fs)
-            wal_train.append(np.zeros(x.size(0), dtype=int))
+            y_trg_tensor = torch.tensor([y_trg] * x_dp_0_map.size(0), device=self.device)
+            y_trg_oh = self.label2onehot(y_trg_tensor, self.num_classes)
+            x_syn.append(self.G(x_dp_0_map, y_trg_oh))
+            y_syn.append(y_trg_tensor)
+            k_syn.append(k_dp_0_map)
+            
+        x_syn = torch.cat(x_syn, dim=0).detach().cpu().numpy()
+        y_syn = torch.cat(y_syn, dim=0).detach().cpu().numpy()
+        k_syn = torch.cat(k_syn, dim=0).detach().cpu().numpy()
         
-        x_syn = torch.cat(x_syn, dim=0).cpu().numpy()
-        y_syn = np.concatenate(y_syn)
-        k_syn = np.concatenate(k_syn)
-        fs_syn = np.concatenate(fs_syn)
-        wal_train = np.concatenate(wal_train)
+        # Filter not class 0 samples and dp domains
+        mask_dp_not0 = (y != 0) & (k >= self.num_df_domains)
+        x_dp_not0 = x[mask_dp_not0]
+        k_dp_not0 = k[mask_dp_not0]
+        y_dp_not0 = y[mask_dp_not0]
 
-        # Save the synthetic samples
+        print(f'Loaded classes not0 data with shape {x_dp_not0.shape}, from {len(set(k_dp_not0))} domains and {len(set(y_dp_not0))} classes')
+
+        x_te = np.concatenate([x_dp_0_te, x_dp_not0], axis=0)
+        y_te = np.concatenate([y_dp_0_te, y_dp_not0], axis=0)
+        k_te = np.concatenate([k_dp_0_te, k_dp_not0], axis=0)
+
+        # Save the data
         with open(f'data/{self.dataset}_{name}.pkl', 'wb') as f:
-            pickle.dump((x_syn, y_syn, k_syn), f)
-
-        with open(f'data/{self.dataset}_{name}_fs.pkl', 'wb') as f:
-            pickle.dump(fs_syn, f)
-
-        with open(f'data/{self.dataset}_{name}_waltrain.pkl', 'wb') as f:
-            pickle.dump(wal_train, f)
+            pickle.dump((x_syn, x_te, y_syn, y_te, k_syn, k_te), f)
         
-        print(f'Saved synthetic samples with shape {x_syn.shape}, from {len(set(k_syn))} domains')
+        print(f'Saved synthetic samples with shape {x_syn.shape}, from {len(set(k_syn))} domains and {len(set(y_syn))} classes')
+        print(f'Saved test samples with shape {x_te.shape}, from {len(set(k_te))} domains and {len(set(y_te))} classes')
 
 
 
