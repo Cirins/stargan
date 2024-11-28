@@ -38,7 +38,7 @@ def main(args):
     elif args.mode == 'finetune':
         solver.train()
     elif args.mode == 'sample':
-        solver.sample(args.syn_name, True)
+        solver.sample(args.syn_name, False)
 
 
 if __name__ == '__main__':
@@ -58,7 +58,11 @@ if __name__ == '__main__':
     parser.add_argument('--loss_type', type=str, default='wgan-gp', choices=['gan', 'lsgan', 'wgan-gp'], help='type of GAN loss')
     
     # Training configuration.
-    parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld', 'cwru', 'realworld_mobiact', 'realworld_mobiact_rot'], help='dataset name')
+    parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld', 
+                                                                                     'cwru', 
+                                                                                     'realworld_mobiact', 
+                                                                                     'realworld_mobiact_rot',
+                                                                                     'mobiact_realworld'], help='dataset name')
     parser.add_argument('--class_names', type=str, required=True, help='class names')
     parser.add_argument('--channel_names', type=str, required=True, help='channel names')
     parser.add_argument('--num_df_domains', type=int, required=True, help='number of domains in Df')

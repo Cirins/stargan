@@ -1,20 +1,23 @@
 import subprocess
 
-class_names = ['WAL', 'RUN', 'CLD', 'CLU']
-channel_names = ['X', 'Y', 'Z']
-num_df_domains = 15
-num_dp_domains = 61
-
-dataset = 'realworld_mobiact'
-
 mode = 'sample'
 
-syn_name = 'rwma11'
+class_names = ['WAL', 'RUN', 'CLD', 'CLU']
+channel_names = ['X', 'Y', 'Z']
 
 g_repeat_num = 5
 d_repeat_num = 4
 
-resume_iters = 190000
+
+
+num_df_domains = 61
+num_dp_domains = 15
+
+dataset = 'mobiact_realworld'
+
+syn_name = 'marw01'
+
+resume_iters = 130000
 
 
 

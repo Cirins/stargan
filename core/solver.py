@@ -545,9 +545,14 @@ class Solver(object):
             print('Warning! Walking class included in the results!')
             name += '_wal'
             x_syn, y_syn, k_syn, fs_syn = [x], [y], [k], [fs]
+            wal_train = np.zeros(x.size(0), dtype=int)
+            wal_train[:x.size(0) // 2] = 1
+            np.random.shuffle(wal_train)
+            wal_train = [wal_train]
         else:
             x_syn, y_syn, k_syn, fs_syn = [], [], [], []
-        
+            wal_train = []
+
         # Map x to the target classes
         for y_trg in range(1, self.num_classes):
             print(f'Mapping class 0 to class {y_trg}...')
@@ -556,10 +561,13 @@ class Solver(object):
             y_syn.append([y_trg] * x.size(0))
             k_syn.append(k)
             fs_syn.append(fs)
+            wal_train.append(np.zeros(x.size(0), dtype=int))
+        
         x_syn = torch.cat(x_syn, dim=0).cpu().numpy()
         y_syn = np.concatenate(y_syn)
         k_syn = np.concatenate(k_syn)
         fs_syn = np.concatenate(fs_syn)
+        wal_train = np.concatenate(wal_train)
 
         # Save the synthetic samples
         with open(f'data/{self.dataset}_{name}.pkl', 'wb') as f:
@@ -567,6 +575,9 @@ class Solver(object):
 
         with open(f'data/{self.dataset}_{name}_fs.pkl', 'wb') as f:
             pickle.dump(fs_syn, f)
+
+        with open(f'data/{self.dataset}_{name}_waltrain.pkl', 'wb') as f:
+            pickle.dump(wal_train, f)
         
         print(f'Saved synthetic samples with shape {x_syn.shape}, from {len(set(k_syn))} domains')
 
