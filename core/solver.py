@@ -538,7 +538,7 @@ class Solver(object):
         print(f'Loaded Df data with shape {x_df.shape}, from {len(set(k_df))} domains and {len(set(y_df))} classes')
 
         # Save the data
-        with open(f'data/{self.dataset}_Df.pkl', 'wb') as f:
+        with open(f'data/{self.dataset}_df.pkl', 'wb') as f:
             pickle.dump((x_df, y_df, k_df), f)
         
         # Filter only class 0 samples and dp domains
@@ -599,7 +599,7 @@ class Solver(object):
         print(f'Loaded Dp data with shape {x_dp.shape}, from {len(set(k_dp))} domains and {len(set(y_dp))} classes')
 
         # Save the data
-        with open(f'data/{self.dataset}_Dp.pkl', 'wb') as f:
+        with open(f'data/{self.dataset}_dp.pkl', 'wb') as f:
             pickle.dump((x_dp, y_dp, k_dp), f)
 
 

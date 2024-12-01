@@ -1,0 +1,14 @@
+01, ???, d_repeat_num=4, g_repeat_num=5, batch_size=32 -> 0.8206, 0.8118, 0.5285, 0.5313
+
+02, Dragon1, d_repeat_num=6, g_repeat_num=6, batch_size=32 -> 0.8119, 0.7854, 0.7579, 0.4530
+
+
+
+
+
+
+
+
+
+
+

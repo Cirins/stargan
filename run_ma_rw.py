@@ -15,8 +15,8 @@ lambda_gp = 10
 lambda_dom = 0
 lambda_rot = 10
 
-g_repeat_num = 5
-d_repeat_num = 4
+g_repeat_num = 6
+d_repeat_num = 6
 
 batch_size = 32
 
