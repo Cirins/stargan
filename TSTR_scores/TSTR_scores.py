@@ -1,7 +1,10 @@
 import pickle
 import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
@@ -70,6 +73,10 @@ print(f"Number of epochs: {num_epochs} | Patience: {patience} | Number of runs: 
 
 
 def get_data(dataset, domains_set, src_class, domain=None, rot=False):
+
+    if domains_set == 'df' and domain is not None:
+        raise ValueError("Domain filtering is not supported for Df data")
+    
     # Load configurations
     dataset_name = config[dataset]['dataset_name']
     class_idx = config[dataset]['class_names'].index(src_class)
@@ -113,6 +120,7 @@ class TSTRFeatureExtractor(nn.Module):
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.25)
+        self.fc_shared = nn.Linear(num_timesteps * 8, 100)
 
     def forward(self, x):
         x = self.pool(self.relu(self.bn1(self.conv1(x))))
@@ -121,6 +129,7 @@ class TSTRFeatureExtractor(nn.Module):
         x = self.pool(self.relu(self.bn4(self.conv4(x))))
         x = x.view(x.size(0), -1)  # Flatten
         x = self.dropout(x)
+        x = self.relu(self.fc_shared(x))
         return x
 
 
@@ -129,13 +138,11 @@ class TSTRClassifier(nn.Module):
         super(TSTRClassifier, self).__init__()
 
         self.feature_extractor = TSTRFeatureExtractor(num_timesteps, num_channels)
-        self.fc_shared = nn.Linear(num_timesteps * 8, 100)
         self.fc_class = nn.Linear(100, num_classes)
         self.relu = nn.ReLU()
 
     def forward(self, x):
         x = self.feature_extractor(x)
-        x = self.relu(self.fc_shared(x))
         class_outputs = self.fc_class(x)
         return class_outputs
 
@@ -240,9 +247,10 @@ def evaluate_model(model, test_loader):
     all_preds = np.array(all_preds)
     accuracy = accuracy_score(all_labels, all_preds)
     f1 = f1_score(all_labels, all_preds, average='weighted')
+    cm = confusion_matrix(all_labels, all_preds)
     total_loss /= len(test_loader)
 
-    return accuracy, total_loss, f1
+    return accuracy, total_loss, f1, cm
 
 
 
@@ -287,7 +295,7 @@ def train_model(model, train_loader, val_loader, optimizer, num_epochs=100, augm
         # # Update learning rate
         # scheduler.step()
 
-        # val_accuracy, val_loss, val_f1 = evaluate_model(model, val_loader)
+        # val_accuracy, val_loss, val_f1, val_cm = evaluate_model(model, val_loader)
         # if val_loss < best_loss:
         #     best_epoch = epoch
         #     best_accuracy = val_accuracy
@@ -321,9 +329,11 @@ def train_model(model, train_loader, val_loader, optimizer, num_epochs=100, augm
 
 
 
-def train_model_coral(model, train_loader, val_loader, coral_loader, optimizer, coral_weight=1e5, num_epochs=100, augment=False, patience=-1):
+def train_model_coral(model, train_loader, val_loader, x_test, optimizer, coral_weight=1, num_epochs=100, augment=False, patience=-1):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+
+    x_test = torch.tensor(x_test, dtype=torch.float32, device=device).to(device)
 
     loss_fn = nn.CrossEntropyLoss()
     loss_coral = CORAL()
@@ -344,45 +354,34 @@ def train_model_coral(model, train_loader, val_loader, coral_loader, optimizer, 
     # scheduler = LambdaLR(optimizer, lr_lambda=lambda_lr)
     # scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
 
-    len_joint_loader = max(len(train_loader), len(coral_loader))
-
-    print("Warning: 1 epoch")
-    for epoch in range(1):
-    
-        if len(train_loader) > len(coral_loader):
-            joint_loader = zip(train_loader, itertools.cycle(coral_loader))
-        else:
-            joint_loader = zip(itertools.cycle(train_loader), coral_loader)        
-        
+    for epoch in range(num_epochs):
         model.train()
         total_loss = 0
         total_class_loss = 0
         total_coral_loss = 0
-        for i, ((x_batch, y_batch), (x_coral_batch, _)) in enumerate(joint_loader):
-            x_batch, y_batch, x_coral_batch = x_batch.to(device), y_batch.to(device), x_coral_batch.to(device)
+        for x_batch, y_batch in train_loader:
+            x_batch, y_batch = x_batch.to(device), y_batch.to(device)
             if augment:
                 x_batch, _ = augment_batch(x_batch)
             optimizer.zero_grad()
             outputs = model(x_batch)
             class_loss = loss_fn(outputs, y_batch)
-            coral_loss = coral_weight * loss_coral(model.feature_extractor(x_batch), model.feature_extractor(x_coral_batch))
-            loss = class_loss + coral_loss
-            if i % 50 == 0:
-                print(f"Batch {i+1}/{len_joint_loader} - Class loss: {class_loss.item():.4f} - Coral loss: {coral_loss.item():.4f} - Total loss: {loss.item():.4f}")
+            coral_loss = loss_coral(model.feature_extractor(x_batch), model.feature_extractor(x_test))
+            loss = class_loss + coral_weight * coral_loss
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
             total_class_loss += class_loss.item()
             total_coral_loss += coral_loss.item()
-        total_loss /= len_joint_loader
-        total_class_loss /= len_joint_loader
-        total_coral_loss /= len_joint_loader
+        total_loss /= len(train_loader)
+        total_class_loss /= len(train_loader)
+        total_coral_loss /= len(train_loader)
         # loss_train.append(total_loss)
 
         # # Update learning rate
         # scheduler.step()
 
-        # val_accuracy, val_loss, val_f1 = evaluate_model(model, val_loader)
+        # val_accuracy, val_loss, val_f1, val_cm = evaluate_model(model, val_loader)
         # if val_loss < best_loss:
         #     best_epoch = epoch
         #     best_accuracy = val_accuracy
@@ -400,7 +399,7 @@ def train_model_coral(model, train_loader, val_loader, coral_loader, optimizer, 
 
         if (epoch+1) % 5 == 0:
             # print(f"\tEpoch {epoch + 1}/{num_epochs} - Train loss: {total_loss:.4f} ({total_class_loss:.4f} + {total_coral_loss:.4f}) - Val loss: {val_loss:.4f} - Val accuracy: {val_accuracy:.4f} - Val F1: {val_f1:.4f} - LR: {current_lr:.2e}")
-            print(f"\tEpoch {epoch + 1}/{num_epochs} - Train loss: {total_loss:.4f} ({total_class_loss:.4f} + {total_coral_loss:.4f})")
+            print(f"\tEpoch {epoch + 1}/{num_epochs} - Train loss: {total_loss:.4f} ({total_class_loss:.4f} + {total_coral_loss:.2e})")
 
     #     # Early stopping
     #     if patience > 0 and epochs_no_improve >= patience:
@@ -427,7 +426,6 @@ def train_only(x_train, y_train, dataset, num_epochs=100, augment=False, patienc
 
     train_loader = get_dataloader(x_train, y_train, shuffle=True)
     val_loader = None
-    print("Warning: no validation set")
 
     model = TSTRClassifier(num_timesteps=config[dataset]['num_timesteps'],
                            num_channels=config[dataset]['num_channels'],
@@ -441,23 +439,23 @@ def train_only(x_train, y_train, dataset, num_epochs=100, augment=False, patienc
 
 
 
-def train_and_test(x_train, y_train, x_test, y_test, dataset, num_epochs=100, augment=False, patience=-1, train_coral=False):
+def train_and_test(x_train, y_train, x_test, y_test, dataset, num_epochs=100, augment=False, patience=-1, train_coral=False, coral_weight=1):
     assert np.array_equal(np.unique(y_train), np.unique(y_test)), f"Training and test labels do not match: {np.unique(y_train)} vs {np.unique(y_test)}"
 
     num_classes = len(np.unique(y_train))
 
     # x_tr, x_val, y_tr, y_val = train_test_split(x_train, y_train, test_size=0.2, stratify=y_train, shuffle=True, random_state=seed)
 
-    if train_coral:
+    # if train_coral:
         # x_coral_train, x_test, y_coral_train, y_test = train_test_split(x_test, y_test, test_size=0.2, stratify=y_test, shuffle=True, random_state=seed)
         # print(f'x_coral_train.shape: {x_coral_train.shape} | np.unique(y_coral_train): {np.unique(y_coral_train)}')
         # print(f'x_coral_test.shape: {x_test.shape} | np.unique(y_coral_test): {np.unique(y_test)}')
-        x_coral_train = x_test[y_test == 0]
-        y_coral_train = y_test[y_test == 0]
-        x_test = x_test[y_test != 0]
-        y_test = y_test[y_test != 0]
-        print(f'x_coral_train.shape: {x_coral_train.shape} | np.unique(y_coral_train): {np.unique(y_coral_train)}')
-        print(f'x_test.shape: {x_test.shape} | np.unique(y_test): {np.unique(y_test)}')
+        # x_coral_train = x_test[y_test == 0]
+        # y_coral_train = y_test[y_test == 0]
+        # x_test = x_test[y_test != 0]
+        # y_test = y_test[y_test != 0]
+        # print(f'x_coral_train.shape: {x_coral_train.shape} | np.unique(y_coral_train): {np.unique(y_coral_train)}')
+        # print(f'x_test.shape: {x_test.shape} | np.unique(y_test): {np.unique(y_test)}')
 
     # train_loader = get_dataloader(x_tr, y_tr, shuffle=True)
     # val_loader = get_dataloader(x_val, y_val)
@@ -466,9 +464,8 @@ def train_and_test(x_train, y_train, x_test, y_test, dataset, num_epochs=100, au
 
     train_loader = get_dataloader(x_train, y_train, shuffle=True)
     val_loader = None
-    coral_loader = get_dataloader(x_test, y_test, shuffle=True)
+    # coral_loader = get_dataloader(x_test, y_test, shuffle=True)
     test_loader = get_dataloader(x_test, y_test)
-    print("Warning: no validation set and coral set is the test set")
 
     model = TSTRClassifier(num_timesteps=config[dataset]['num_timesteps'],
                            num_channels=config[dataset]['num_channels'],
@@ -477,13 +474,13 @@ def train_and_test(x_train, y_train, x_test, y_test, dataset, num_epochs=100, au
     optimizer = optim.Adam(model.parameters(), lr=initial_lr, weight_decay=1e-4)
 
     if train_coral:
-        trained_model = train_model_coral(model, train_loader, val_loader, coral_loader, optimizer, num_epochs=num_epochs, augment=augment, patience=patience)
+        trained_model = train_model_coral(model, train_loader, val_loader, x_test, optimizer, num_epochs=num_epochs, augment=augment, patience=patience, coral_weight=coral_weight)
     else:
         trained_model = train_model(model, train_loader, val_loader, optimizer, num_epochs=num_epochs, augment=augment, patience=patience)
 
-    test_accuracy, test_loss, test_f1 = evaluate_model(trained_model, test_loader)
+    test_accuracy, test_loss, test_f1, test_cm = evaluate_model(trained_model, test_loader)
 
-    return test_accuracy, test_loss, test_f1
+    return test_accuracy, test_loss, test_f1, test_cm
 
 
 def pseudo_labeling(model, x, y, dataset, num_epochs=100, augment=False, patience=-1):
@@ -504,35 +501,40 @@ def pseudo_labeling(model, x, y, dataset, num_epochs=100, augment=False, patienc
 
 
 def train_classifier_cv(x_train, y_train, dataset, num_epochs=100):
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    n_splits = 5
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     accs = []
     losses = []
     f1s = []
+    total_cm = None
 
     for train_index, test_index in skf.split(x_train, y_train):
         x_train_fold, x_test_fold = x_train[train_index], x_train[test_index]
         y_train_fold, y_test_fold = y_train[train_index], y_train[test_index]
 
-        acc, loss, f1 = train_and_test(x_train_fold, y_train_fold, x_test_fold, y_test_fold, dataset, num_epochs)
+        acc, loss, f1, cm = train_and_test(x_train_fold, y_train_fold, x_test_fold, y_test_fold, dataset, num_epochs)
         accs.append(acc)
         losses.append(loss)
         f1s.append(f1)
-    return np.mean(accs), np.mean(losses), np.mean(f1s)
+        if total_cm is None:
+            total_cm = cm
+        else:
+            total_cm += cm
+
+    total_cm = total_cm / n_splits
+    return np.mean(accs), np.mean(losses), np.mean(f1s), total_cm
 
 
 
 def fine_tune(model, x_train, y_train, num_epochs=100):
-    raise NotImplementedError("Not updated for the new dataset format")
     # Freeze feature extraction layers
     for name, param in model.named_parameters():
         if 'conv' in name or 'bn' in name:
             param.requires_grad = False
 
-    x_tr, x_val, y_tr, y_val = train_test_split(x_train, y_train, test_size=0.2, stratify=y_train, shuffle=True, random_state=seed)
-
-    train_loader = get_dataloader(x_tr, y_tr, shuffle=True)
-    val_loader = get_dataloader(x_val, y_val)
+    train_loader = get_dataloader(x_train, y_train, shuffle=True)
+    val_loader = None
 
     initial_lr = 0.00001
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=initial_lr)
@@ -542,11 +544,33 @@ def fine_tune(model, x_train, y_train, num_epochs=100):
     return trained_model
 
 
+def save_cm(cm, name, dataset):
+    results_dir = 'results_prova'
+    # Ensure the directory exists
+    os.makedirs(results_dir, exist_ok=True)
+
+    classes = ['WAL', 'RUN', 'CLD', 'CLU']
+    df_cm = pd.DataFrame(cm, index=classes, columns=classes)
+    
+    # Calculate accuracy per class
+    accuracy_per_class = cm.diagonal() / cm.sum(axis=1)
+    
+    # Print accuracy per class
+    for i, class_name in enumerate(classes):
+        print(f'Accuracy for {class_name}: {accuracy_per_class[i]:.4f}')
+    
+    plt.figure(figsize=(10, 7))
+    sns.heatmap(df_cm, annot=df_cm.astype(int), fmt="d", cmap="Blues")
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title(f'{dataset} - {name}')
+    plt.savefig(f'{results_dir}/{dataset}_{name}_cm.png')
+    plt.show()
 
 
 
 def save_scores(source, domain, accuracy, loss, f1, name, dataset):
-    results_dir = 'results'
+    results_dir = 'results_prova'
     # Ensure the directory exists
     os.makedirs(results_dir, exist_ok=True)
     # Path to the CSV file
@@ -567,8 +591,11 @@ def save_scores(source, domain, accuracy, loss, f1, name, dataset):
 
 
 def compute_TSTR_Dp(dataset):
+    name = 'Dp'
+
     accs = []
     f1s = []
+    total_cm = None
 
     for src_class in config[dataset]['class_names']:
         if src_class != 'WAL':
@@ -580,32 +607,41 @@ def compute_TSTR_Dp(dataset):
             print(f"Domain: {domain}")
 
             if domain == 74:
-              continue
+                continue
 
             # Load Dp data
             x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp', src_class, domain)
+            # x_dp_dom, _, y_dp_dom, _ = train_test_split(x_dp_dom, y_dp_dom, train_size=0.5, stratify=y_dp_dom, shuffle=True, random_state=seed)
+            # print("Warning: Using only small fraction of Dp data")
             print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}\n')
 
             # Train and evaluate via cross-validation on Dp data
             print('Training and evaluating on Dp data via cross-validation...')
-            acc, loss, f1 = train_classifier_cv(x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs)
-            save_scores(src_class, domain, acc, loss, f1, 'Dp', dataset)
+            acc, loss, f1, cm = train_classifier_cv(x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs)
+            save_scores(src_class, domain, acc, loss, f1, name, dataset)
             accs.append(acc)
             f1s.append(f1)
             print(f'Source class: {src_class} | Domain: {domain} | Accuracy: {acc:.4f} | Loss: {loss:.4f} | F1: {f1:.4f}\n')
 
+            if total_cm is None:
+                total_cm = cm
+            else:
+                total_cm += cm
+
     print(f"Mean accuracy: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
     print(f"Mean F1: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    save_cm(total_cm, name, dataset)
 
 
 
+def compute_TSTR_Df(dataset, augment=False):
+    name = 'Df_aug' if augment else 'Df'
 
-def compute_TSTR_Df(dataset):
     accs = []
     f1s = []
+    total_cm = None
 
     for i in range(num_runs):
-
         accs_run = []
         f1s_run = []
 
@@ -617,11 +653,13 @@ def compute_TSTR_Df(dataset):
 
             # Load Df data
             x_df, y_df, k_df = get_data(dataset, 'df', src_class)
+            # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.1, stratify=y_df, shuffle=True, random_state=seed)
+            # print("Warning: Using only small fraction of Df data")
             print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
 
             # Train on Df data
             print('Training on Df data...')
-            df_model = train_only(x_df, y_df, dataset, num_epochs=num_epochs, patience=patience)
+            df_model = train_only(x_df, y_df, dataset, num_epochs=num_epochs, patience=patience, augment=augment)
 
             for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
                 print(f"Domain: {domain}")
@@ -631,11 +669,16 @@ def compute_TSTR_Df(dataset):
                 print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
 
                 # Evaluate on Dp data
-                acc, loss, f1 = evaluate_model(df_model, get_dataloader(x_dp_dom, y_dp_dom))
-                save_scores(src_class, domain, acc, loss, f1, 'Df', dataset)
+                acc, loss, f1, cm = evaluate_model(df_model, get_dataloader(x_dp_dom, y_dp_dom))
+                save_scores(src_class, domain, acc, loss, f1, name, dataset)
                 accs_run.append(acc)
                 f1s_run.append(f1)
                 print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+
+                if total_cm is None:
+                    total_cm = cm
+                else:
+                    total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
         print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
@@ -644,16 +687,19 @@ def compute_TSTR_Df(dataset):
 
     print(f"Mean accuracy over {num_runs} runs: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
     print(f"Mean F1 over {num_runs} runs: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    total_cm = total_cm / num_runs
+    save_cm(total_cm, name, dataset)
 
 
 
+def compute_TSTR_Df_ftDp0(dataset, augment=False):
+    name = 'Df_ftDp0_aug' if augment else 'Df'
 
-def compute_TSTR_Df_aug(dataset):
     accs = []
     f1s = []
+    total_cm = None
 
     for i in range(num_runs):
-
         accs_run = []
         f1s_run = []
 
@@ -665,11 +711,13 @@ def compute_TSTR_Df_aug(dataset):
 
             # Load Df data
             x_df, y_df, k_df = get_data(dataset, 'df', src_class)
+            x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.1, stratify=y_df, shuffle=True, random_state=seed)
+            print("Warning: Using only small fraction of Df data")
             print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
 
             # Train on Df data
             print('Training on Df data...')
-            df_model = train_only(x_df, y_df, dataset, num_epochs=num_epochs, augment=True, patience=patience)
+            df_model = train_only(x_df, y_df, dataset, num_epochs=num_epochs, patience=patience, augment=augment)
 
             for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
                 print(f"Domain: {domain}")
@@ -678,12 +726,25 @@ def compute_TSTR_Df_aug(dataset):
                 x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp', src_class, domain)
                 print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
 
+                # Load Dp0 data
+                x_dp0map_dom, y_dp0map_dom, k_dp0map_dom = get_data(dataset, 'dp0map', src_class, domain)
+                print(f'x_dp0map_dom.shape: {x_dp0map_dom.shape} | np.unique(y_dp0map_dom): {np.unique(y_dp0map_dom)} | np.unique(k_dp0map_dom): {np.unique(k_dp0map_dom)}')
+
+                # Fine-tune on Dp0 data
+                print('Fine-tuning on Dp0 data...')
+                df_model = fine_tune(df_model, x_dp0map_dom, y_dp0map_dom, num_epochs=num_epochs)
+
                 # Evaluate on Dp data
-                acc, loss, f1 = evaluate_model(df_model, get_dataloader(x_dp_dom, y_dp_dom))
-                save_scores(src_class, domain, acc, loss, f1, 'Df_aug', dataset)
+                acc, loss, f1, cm = evaluate_model(df_model, get_dataloader(x_dp_dom, y_dp_dom))
+                save_scores(src_class, domain, acc, loss, f1, name, dataset)
                 accs_run.append(acc)
                 f1s_run.append(f1)
                 print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+
+                if total_cm is None:
+                    total_cm = cm
+                else:
+                    total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
         print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
@@ -692,13 +753,91 @@ def compute_TSTR_Df_aug(dataset):
 
     print(f"Mean accuracy over {num_runs} runs: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
     print(f"Mean F1 over {num_runs} runs: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    total_cm = total_cm / num_runs
+    save_cm(total_cm, name, dataset)
+
+
+
+
+def compute_TSTR_Df_Dp0map(dataset, augment=False, sub=True):
+    name = 'Df_Dp0map'
+    if augment:
+        name += '_aug'
+    if sub:
+        name += '_sub'
+
+    accs = []
+    f1s = []
+    total_cm = None
+
+    for i in range(1):
+        accs_run = []
+        f1s_run = []
+
+        for src_class in config[dataset]['class_names']:
+            if src_class != 'WAL':
+                continue
+
+            print(f"Source class: {src_class}\n")
+
+            for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
+                print(f"Domain: {domain}")
+
+                # Load Df data
+                x_df, y_df, k_df = get_data(dataset, 'df', src_class)
+                # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.1, stratify=y_df, shuffle=True, random_state=seed)
+                # print("Warning: Using only small fraction of Df data")
+                print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
+
+                # Add Dp0map data to Df data
+                x_dp0map_dom, y_dp0map_dom, k_dp0map_dom = get_data(dataset, 'dp0map', src_class, domain)
+                if sub:
+                    mask = (y_df != 0)
+                    x_df = x_df[mask]
+                    y_df = y_df[mask]
+                    k_df = k_df[mask]
+                x_df = np.concatenate([x_df, x_dp0map_dom], axis=0)
+                y_df = np.concatenate([y_df, y_dp0map_dom], axis=0)
+                k_df = np.concatenate([k_df, k_dp0map_dom], axis=0)
+                print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}')
+
+                # Load Dp data
+                x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp', src_class, domain)
+                print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
+
+                # Train on Df data and evaluate on Dp data
+                print('Training on Df data...')
+                acc, loss, f1, cm = train_and_test(x_df, y_df, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience, augment=augment)
+                save_scores(src_class, domain, acc, loss, f1, name, dataset)
+                accs_run.append(acc)
+                f1s_run.append(f1)
+                print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+
+                if total_cm is None:
+                    total_cm = cm
+                else:
+                    total_cm += cm
+
+        print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
+        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
+        accs.append(np.mean(accs_run))
+        f1s.append(np.mean(f1s_run))
+
+    print(f"Mean accuracy over {num_runs} runs: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
+    print(f"Mean F1 over {num_runs} runs: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    total_cm = total_cm / num_runs
+    save_cm(total_cm, name, dataset)
+
 
 
 
 
 def compute_TSTR_Syn(dataset, syn_name):
+    name = 'Syn'
+
     accs = []
     f1s = []
+    total_cm = None
 
     for i in range(num_runs):
 
@@ -716,6 +855,8 @@ def compute_TSTR_Syn(dataset, syn_name):
 
                 # Load synthetic data
                 x_syn_dom, y_syn_dom, k_syn_dom = get_data(dataset, syn_name, src_class, domain)
+                # x_syn_dom, _, y_syn_dom, _ = train_test_split(x_syn_dom, y_syn_dom, train_size=0.1, stratify=y_syn_dom, shuffle=True, random_state=seed)
+                # print("Warning: Using only small fraction of Syn data")
                 print(f'x_syn_dom.shape: {x_syn_dom.shape} | np.unique(y_syn_dom): {np.unique(y_syn_dom)} | np.unique(k_syn_dom): {np.unique(k_syn_dom)}')
 
                 # Load Dp data
@@ -724,11 +865,16 @@ def compute_TSTR_Syn(dataset, syn_name):
 
                 # Train on synthetic data and evaluate on Dp data
                 print('Training on synthetic data...')
-                acc, loss, f1 = train_and_test(x_syn_dom, y_syn_dom, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience)
-                save_scores(src_class, domain, acc, loss, f1, 'Syn', dataset)
+                acc, loss, f1, cm = train_and_test(x_syn_dom, y_syn_dom, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience)
+                save_scores(src_class, domain, acc, loss, f1, name, dataset)
                 accs_run.append(acc)
                 f1s_run.append(f1)
                 print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+
+                if total_cm is None:
+                    total_cm = cm
+                else:
+                    total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
         print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
@@ -737,15 +883,19 @@ def compute_TSTR_Syn(dataset, syn_name):
 
     print(f"Mean accuracy: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
     print(f"Mean F1: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    total_cm = total_cm / num_runs
+    save_cm(total_cm, name, dataset)
 
 
 
+def compute_TSTR_CORAL(dataset, augment=False, coral_weight=1):
+    name = 'CORAL_aug' if augment else 'CORAL'
 
-def compute_TSTR_CORAL(dataset):
     accs = []
     f1s = []
+    total_cm = None
 
-    for i in range(num_runs):
+    for i in range(1):
 
         accs_run = []
         f1s_run = []
@@ -758,7 +908,7 @@ def compute_TSTR_CORAL(dataset):
 
             # Load Df data
             x_df, y_df, k_df = get_data(dataset, 'df', src_class)
-            # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.1, stratify=y_df, shuffle=True, random_state=seed)
+            # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.01, stratify=y_df, shuffle=True, random_state=seed)
             # print("Warning: Using only small fraction of Df data")
             print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
 
@@ -771,11 +921,16 @@ def compute_TSTR_CORAL(dataset):
 
                 # Train on Df data and Dp data with CORAL and evaluate on Dp data
                 print('Training on Df data and Dp data with CORAL...')
-                acc, loss, f1 = train_and_test(x_df, y_df, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience, train_coral=True)
-                save_scores(src_class, domain, acc, loss, f1, 'CORAL', dataset)
+                acc, loss, f1, cm = train_and_test(x_df, y_df, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience, train_coral=True, augment=augment, coral_weight=coral_weight)
+                save_scores(src_class, domain, acc, loss, f1, name, dataset)
                 accs_run.append(acc)
                 f1s_run.append(f1)
                 print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+
+                if total_cm is None:
+                    total_cm = cm
+                else:
+                    total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
         print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
@@ -784,103 +939,57 @@ def compute_TSTR_CORAL(dataset):
 
     print(f"Mean accuracy: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
     print(f"Mean F1: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    total_cm = total_cm / num_runs
+    save_cm(total_cm, name, dataset)
 
 
 
+# def compute_TSTR_PL(dataset):
+#     accs = []
+#     f1s = []
 
-def compute_TSTR_CORAL_aug(dataset):
-    accs = []
-    f1s = []
+#     for i in range(num_runs):
 
-    for i in range(num_runs):
+#         accs_run = []
+#         f1s_run = []
 
-        accs_run = []
-        f1s_run = []
+#         for src_class in config[dataset]['class_names']:
+#             if src_class != 'WAL':
+#                 continue
 
-        for src_class in config[dataset]['class_names']:
-            if src_class != 'WAL':
-                continue
+#             print(f"Source class: {src_class}\n")
 
-            print(f"Source class: {src_class}\n")
+#             # Load Df data
+#             x_df, y_df, k_df = get_data(dataset, 'df', src_class)
+#             # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.5, stratify=y_df, shuffle=True, random_state=seed)
+#             # print("Warning: Using only small fraction of Df data")
+#             print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
 
-            # Load Df data
-            x_df, y_df, k_df = get_data(dataset, 'df', src_class)
-            # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.1, stratify=y_df, shuffle=True, random_state=seed)
-            # print("Warning: Using only small fraction of Df data")
-            print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
+#             # Train on Df data
+#             print('Training on Df data...')
+#             df_model = train_only(x_df, y_df, dataset, num_epochs=num_epochs, patience=patience)
 
-            for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
-                print(f"Domain: {domain}")
+#             for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
+#                 print(f"Domain: {domain}")
 
-                # Load Dp data
-                x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp', src_class, domain)
-                print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}\n')
+#                 # Load Dp data
+#                 x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp', src_class, domain)
+#                 print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
 
-                # Train on Df data and Dp data with CORAL and evaluate on Dp data
-                print('Training on Df data and Dp data with CORAL...')
-                acc, loss, f1 = train_and_test(x_df, y_df, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience, train_coral=True, augment=True)
-                save_scores(src_class, domain, acc, loss, f1, 'CORAL_aug', dataset)
-                accs_run.append(acc)
-                f1s_run.append(f1)
-                print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+#                 # Evaluate on Dp data with pseudo-labeling
+#                 acc, loss, f1 = pseudo_labeling(df_model, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience)
+#                 save_scores(src_class, domain, acc, loss, f1, 'PL', dataset)
+#                 accs_run.append(acc)
+#                 f1s_run.append(f1)
+#                 print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
 
-        print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
-        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
-        accs.append(np.mean(accs_run))
-        f1s.append(np.mean(f1s_run))
+#         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
+#         print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
+#         accs.append(np.mean(accs_run))
+#         f1s.append(np.mean(f1s_run))
 
-    print(f"Mean accuracy: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
-    print(f"Mean F1: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
-
-
-
-
-def compute_TSTR_PL(dataset):
-    accs = []
-    f1s = []
-
-    for i in range(num_runs):
-
-        accs_run = []
-        f1s_run = []
-
-        for src_class in config[dataset]['class_names']:
-            if src_class != 'WAL':
-                continue
-
-            print(f"Source class: {src_class}\n")
-
-            # Load Df data
-            x_df, y_df, k_df = get_data(dataset, 'df', src_class)
-            x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.5, stratify=y_df, shuffle=True, random_state=seed)
-            print("Warning: Using only small fraction of Df data")
-            print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
-
-            # Train on Df data
-            print('Training on Df data...')
-            df_model = train_only(x_df, y_df, dataset, num_epochs=num_epochs, patience=patience)
-
-            for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
-                print(f"Domain: {domain}")
-
-                # Load Dp data
-                x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp', src_class, domain)
-                print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
-
-                # Evaluate on Dp data with pseudo-labeling
-                acc, loss, f1 = pseudo_labeling(df_model, x_dp_dom, y_dp_dom, dataset, num_epochs=num_epochs, patience=patience)
-                save_scores(src_class, domain, acc, loss, f1, 'PL', dataset)
-                accs_run.append(acc)
-                f1s_run.append(f1)
-                print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
-
-        print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
-        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
-        accs.append(np.mean(accs_run))
-        f1s.append(np.mean(f1s_run))
-
-    print(f"Mean accuracy over {num_runs} runs: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
-    print(f"Mean F1 over {num_runs} runs: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+#     print(f"Mean accuracy over {num_runs} runs: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
+#     print(f"Mean F1 over {num_runs} runs: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
 
 
 

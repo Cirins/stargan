@@ -552,6 +552,11 @@ class Solver(object):
         x_dp_0_map, x_dp_0_te, k_dp_0_map, k_dp_0_te, y_dp_0_map, y_dp_0_te = train_test_split(x_dp_0, k_dp_0, y_dp_0, test_size=0.2, random_state=2710, stratify=k_dp_0, shuffle=True)
 
         print(f'Divided class 0 Dp data into map with shape {x_dp_0_map.shape}, from {len(set(k_dp_0_map))} domains and {len(set(y_dp_0_map))} classes')
+
+        # Save the data
+        with open(f'data/{self.dataset}_dp0map.pkl', 'wb') as f:
+            pickle.dump((x_dp_0_map, y_dp_0_map, k_dp_0_map), f)
+
         print(f'And into test with shape {x_dp_0_te.shape}, from {len(set(k_dp_0_te))} domains and {len(set(y_dp_0_te))} classes')
 
         # Create tensors
