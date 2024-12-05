@@ -58,14 +58,6 @@ class test_dataset(data.Dataset):
         # Load the dataset
         with open(f'data/{dataset}.pkl', 'rb') as f:
             x, y, k = pickle.load(f)
-
-        with open(f'data/{dataset}_fs.pkl', 'rb') as f:
-            fs = pickle.load(f)
-
-        # Filter out the samples that are used for finetuning
-        x = x[fs == 0]
-        y = y[fs == 0]
-        k = k[fs == 0]
         
         # Define test dataset
         x_test = x[k >= num_df_domains]

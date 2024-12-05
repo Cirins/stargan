@@ -38,7 +38,7 @@ def main(args):
     elif args.mode == 'finetune':
         solver.train()
     elif args.mode == 'sample':
-        solver.sample(args.syn_name, args.include0)
+        solver.sample(args.syn_name)
 
 
 if __name__ == '__main__':
@@ -48,32 +48,28 @@ if __name__ == '__main__':
     parser.add_argument('--num_timesteps', type=int, default=128, help='number of timesteps in the input time series')
     parser.add_argument('--g_conv_dim', type=int, default=64, help='number of conv filters in the first layer of G')
     parser.add_argument('--d_conv_dim', type=int, default=64, help='number of conv filters in the first layer of D')
-    parser.add_argument('--g_repeat_num', type=int, default=6, help='number of residual blocks in G')
-    parser.add_argument('--d_repeat_num', type=int, default=6, help='number of strided conv layers in D')
+    parser.add_argument('--g_repeat_num', type=int, default=5, help='number of residual blocks in G')
+    parser.add_argument('--d_repeat_num', type=int, default=4, help='number of strided conv layers in D')
     parser.add_argument('--lambda_cls', type=float, default=1, help='weight for classification loss')
     parser.add_argument('--lambda_rec', type=float, default=10, help='weight for reconstruction loss')
     parser.add_argument('--lambda_gp', type=float, default=10, help='weight for gradient penalty')
-    parser.add_argument('--lambda_dom', type=float, default=1, help='weight for domain loss')
+    parser.add_argument('--lambda_dom', type=float, default=0, help='weight for domain loss')
     parser.add_argument('--lambda_rot', type=float, default=10, help='weight for rotation loss')
     parser.add_argument('--loss_type', type=str, default='wgan-gp', choices=['gan', 'lsgan', 'wgan-gp'], help='type of GAN loss')
     
     # Training configuration.
-    parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld', 
-                                                                                     'cwru', 
-                                                                                     'realworld_mobiact', 
-                                                                                     'realworld_mobiact_rot',
-                                                                                     'mobiact_realworld'], help='dataset name')
+    parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld_mobiact', 'mobiact_realworld'], help='dataset name')
     parser.add_argument('--class_names', type=str, required=True, help='class names')
     parser.add_argument('--channel_names', type=str, required=True, help='channel names')
     parser.add_argument('--num_df_domains', type=int, required=True, help='number of domains in Df')
     parser.add_argument('--num_dp_domains', type=int, required=True, help='number of domains in Dp')
-    parser.add_argument('--batch_size', type=int, default=16, help='mini-batch size')
+    parser.add_argument('--batch_size', type=int, default=32, help='mini-batch size')
     parser.add_argument('--num_iters', type=int, default=1000000, help='number of total iterations for training D')
     parser.add_argument('--n_critic', type=int, default=5, help='number of D updates per each G update')
     parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for Adam optimizer')
     parser.add_argument('--beta2', type=float, default=0.999, help='beta2 for Adam optimizer')
     parser.add_argument('--resume_iters', type=int, default=None, help='resume training from this step')
-    parser.add_argument('--augment', type=str2bool, default=False, help='augment data')
+    parser.add_argument('--augment', type=str2bool, default=True, help='augment data')
 
     # Learning rate decay.
     parser.add_argument('--g_lr', type=float, default=1e-4, help='learning rate for G')
@@ -88,7 +84,6 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'test', 'finetune', 'sample'])
     parser.add_argument('--seed', type=int, default=2710, help='random seed for training')
     parser.add_argument('--syn_name', type=str, default='syn', help='name of the synthetic dataset')
-    parser.add_argument('--include0', type=str2bool, default=False, help='include class 0 in the sampling phase')
 
     # Step size.
     parser.add_argument('--log_step', type=int, default=100)
