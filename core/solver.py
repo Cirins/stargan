@@ -599,7 +599,123 @@ class Solver(object):
 
     #     # Save the data
     #     with open(f'data/{self.dataset}_dp.pkl', 'wb') as f:
+    # #         pickle.dump((x_dp, y_dp, k_dp), f)
+
+            
+
+    # @torch.no_grad()
+    # def sample(self, name):
+    #     """Sample time series using the trained generator."""
+    #     print('Start sampling...')
+    #     # Load the trained generator.
+    #     self.restore_model(self.resume_iters)
+
+    #     # Load the dataset
+    #     with open(f'data/{self.dataset}.pkl', 'rb') as f:
+    #         x, y, k = pickle.load(f)
+
+    #     print(f'Loaded full dataset with shape {x.shape}, from {len(set(k))} domains and {len(set(y))} classes')
+        
+    #     # Filter only df domains
+    #     mask_df = (k < self.num_df_domains)
+    #     x_df = x[mask_df]
+    #     k_df = k[mask_df]
+    #     y_df = y[mask_df]
+
+    #     print(f'Loaded Df data with shape {x_df.shape}, from {len(set(k_df))} domains and {len(set(y_df))} classes')
+
+    #     # Save the data
+    #     with open(f'data/splits/{self.dataset}_df.pkl', 'wb') as f:
+    #         pickle.dump((x_df, y_df, k_df), f)
+        
+    #     # Filter only dp domains
+    #     mask_dp = (k >= self.num_df_domains)
+    #     x_dp = x[mask_dp]
+    #     k_dp = k[mask_dp]
+    #     y_dp = y[mask_dp]
+
+    #     print(f'Loaded Dp data with shape {x_dp.shape}, from {len(set(k_dp))} domains and {len(set(y_dp))} classes')
+
+    #     # Save the data
+    #     with open(f'data/splits/{self.dataset}_dp.pkl', 'wb') as f:
     #         pickle.dump((x_dp, y_dp, k_dp), f)
+
+    #     x_dp_map, x_dp_te, k_dp_map, k_dp_te, y_dp_map, y_dp_te = train_test_split(x_dp, k_dp, y_dp, test_size=0.5, random_state=2710,
+    #                                                                                stratify=np.array(list(zip(y_dp, k_dp))), shuffle=True)
+
+    #     print(f'Divided Dp data into map with shape {x_dp_map.shape}, from {len(set(k_dp_map))} domains and {len(set(y_dp_map))} classes')
+
+    #     # Save the data
+    #     with open(f'data/splits/{self.dataset}_dp_map.pkl', 'wb') as f:
+    #         pickle.dump((x_dp_map, y_dp_map, k_dp_map), f)
+
+    #     print(f'And into test with shape {x_dp_te.shape}, from {len(set(k_dp_te))} domains and {len(set(y_dp_te))} classes')
+
+    #     # Save the data
+    #     with open(f'data/splits/{self.dataset}_dp_te.pkl', 'wb') as f:
+    #         pickle.dump((x_dp_te, y_dp_te, k_dp_te), f)
+
+    #     # Create tensors
+    #     x_dp_map = torch.tensor(x_dp_map, dtype=torch.float32, device=self.device)
+    #     k_dp_map = torch.tensor(k_dp_map, dtype=torch.long, device=self.device)
+    #     y_dp_map = torch.tensor(y_dp_map, dtype=torch.long, device=self.device)
+
+    #     # Map x to the target classes
+    #     x_syn, y_syn, k_syn = [], [], []
+    #     for y_trg in range(0, self.num_classes):
+    #         print(f'Mapping to class {y_trg}...')
+    #         y_trg_tensor = torch.tensor([y_trg] * x_dp_map.size(0), device=self.device)
+    #         y_trg_oh = self.label2onehot(y_trg_tensor, self.num_classes)
+    #         x_syn.append(self.G(x_dp_map, y_trg_oh))
+    #         y_syn.append(y_trg_tensor)
+    #         k_syn.append(k_dp_map)
+            
+    #     x_syn = torch.cat(x_syn, dim=0).detach().cpu().numpy()
+    #     y_syn = torch.cat(y_syn, dim=0).detach().cpu().numpy()
+    #     k_syn = torch.cat(k_syn, dim=0).detach().cpu().numpy()
+
+    #     print(f'Loaded Syn data with shape {x_syn.shape}, from {len(set(k_syn))} domains and {len(set(y_syn))} classes')
+
+    #     # Save the data
+    #     with open(f'data/splits/{self.dataset}_{name}.pkl', 'wb') as f:
+    #         pickle.dump((x_syn, y_syn, k_syn), f)
+
+
+    def custom_train_test_split(self, x, y, k, n_obs):
+        # Combine y and k to identify unique combinations
+        yk_comb = np.array(list(zip(y, k)))
+        
+        # Find unique combinations of y and k
+        unique_combinations = np.unique(yk_comb, axis=0)
+        
+        # Initialize lists to hold train and test indices
+        train_indices = []
+        test_indices = []
+        
+        # Iterate over each unique combination
+        for comb in unique_combinations:
+            # Find indices of the current combination
+            comb_indices = np.where((yk_comb == comb).all(axis=1))[0]
+            
+            # Shuffle indices to ensure randomness
+            np.random.shuffle(comb_indices)
+            
+            # Select n_obs indices for the test set
+            test_indices.extend(comb_indices[:n_obs])
+            
+            # Remaining indices go to the train set
+            train_indices.extend(comb_indices[n_obs:])
+        
+        # Convert lists to numpy arrays
+        train_indices = np.array(train_indices)
+        test_indices = np.array(test_indices)
+        
+        # Split the data into train and test sets
+        x_train, x_test = x[train_indices], x[test_indices]
+        y_train, y_test = y[train_indices], y[test_indices]
+        k_train, k_test = k[train_indices], k[test_indices]
+        
+        return x_train, x_test, y_train, y_test, k_train, k_test
 
             
 
@@ -640,8 +756,11 @@ class Solver(object):
         with open(f'data/splits/{self.dataset}_dp.pkl', 'wb') as f:
             pickle.dump((x_dp, y_dp, k_dp), f)
 
-        x_dp_map, x_dp_te, k_dp_map, k_dp_te, y_dp_map, y_dp_te = train_test_split(x_dp, k_dp, y_dp, test_size=0.5, random_state=2710,
-                                                                                   stratify=np.array(list(zip(y_dp, k_dp))), shuffle=True)
+        if self.dataset == 'realworld_mobiact':
+            n_obs = 10
+        elif self.dataset == 'mobiact_realworld':
+            n_obs = 50
+        x_dp_map, x_dp_te, y_dp_map, y_dp_te, k_dp_map, k_dp_te = self.custom_train_test_split(x_dp, y_dp, k_dp, n_obs)
 
         print(f'Divided Dp data into map with shape {x_dp_map.shape}, from {len(set(k_dp_map))} domains and {len(set(y_dp_map))} classes')
 

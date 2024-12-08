@@ -14,12 +14,12 @@ elif dataset == 'mobiact_realworld':
     num_df_domains = 61
     num_dp_domains = 15
 
-log_step = 1
+log_step = 100
 sample_step = 1000
 model_save_step = 10000
-eval_step = 5
+eval_step = 10000
 
-resume_iters = 0
+resume_iters = 160000
 
 
 
@@ -34,6 +34,6 @@ subprocess.run(['python', 'main.py',
                 '--sample_step', str(sample_step),
                 '--model_save_step', str(model_save_step),
                 '--eval_step', str(eval_step),
-                # '--resume_iters', str(resume_iters),
+                '--resume_iters', str(resume_iters),
                 ])
 

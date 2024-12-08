@@ -1,7 +1,8 @@
 import numpy as np
+from sklearn.model_selection import train_test_split
 
 from core.TSTR_scores_da.utils import get_data, get_dataloader, save_scores, save_cm
-from core.TSTR_scores_da.train_functions import train_cv, train_only, evaluate_model, train_and_test
+from core.TSTR_scores_da.train_functions import train_cv, train_only, evaluate_model, train_and_test, fine_tune
 
 config = {
     'realworld': {
@@ -56,6 +57,8 @@ def compute_TSTR_Dp(dataset, num_epochs):
     total_cm = None
 
     for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
+        # if dataset == 'realworld_mobiact' and domain == 74:
+        #     continue
         print(f"Domain: {domain}")
 
         # Load Dp data
@@ -122,7 +125,7 @@ def compute_TSTR_Df(dataset, num_epochs, num_runs, augment=False):
                 total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
-        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
+        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n\n")
         accs.append(np.mean(accs_run))
         f1s.append(np.mean(f1s_run))
 
@@ -150,7 +153,7 @@ def compute_TSTR_Syn(dataset, syn_name, num_epochs, num_runs):
 
             # Load synthetic data
             x_syn_dom, y_syn_dom, k_syn_dom = get_data(dataset, syn_name, domain)
-            # x_syn_dom, _, y_syn_dom, _ = train_test_split(x_syn_dom, y_syn_dom, train_size=0.1, stratify=y_syn_dom, shuffle=True, random_state=seed)
+            # x_syn_dom, _, y_syn_dom, _ = train_test_split(x_syn_dom, y_syn_dom, train_size=0.01, stratify=y_syn_dom, shuffle=True)
             # print("Warning: Using only small fraction of Syn data")
             print(f'x_syn_dom.shape: {x_syn_dom.shape} | np.unique(y_syn_dom): {np.unique(y_syn_dom)} | np.unique(k_syn_dom): {np.unique(k_syn_dom)}')
 
@@ -171,7 +174,7 @@ def compute_TSTR_Syn(dataset, syn_name, num_epochs, num_runs):
                 total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
-        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
+        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n\n")
         accs.append(np.mean(accs_run))
         f1s.append(np.mean(f1s_run))
 
@@ -179,6 +182,67 @@ def compute_TSTR_Syn(dataset, syn_name, num_epochs, num_runs):
     print(f"Mean F1: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
     total_cm = total_cm / num_runs
     save_cm(total_cm, syn_name, dataset)
+
+
+
+
+def compute_TSTR_Df2Syn(dataset, syn_name, num_epochs, num_runs, augment=False):
+    name = f'Df2{syn_name}_aug' if augment else f'Df2{syn_name}'
+
+    accs = []
+    f1s = []
+    total_cm = None
+
+    for i in range(num_runs):
+
+        accs_run = []
+        f1s_run = []
+
+        # Load Df data
+        x_df, y_df, k_df = get_data(dataset, 'df')
+        # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.01, stratify=y_df, shuffle=True)
+        # print("Warning: Using only small fraction of Df data")
+        print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}')
+
+        # Train on Df data
+        print('Training on Df data...')
+        df_model = train_only(x_df, y_df, num_epochs, augment)
+
+        for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
+            print(f"Domain: {domain}")
+
+            # Load synthetic data
+            x_syn_dom, y_syn_dom, k_syn_dom = get_data(dataset, syn_name, domain)
+            # x_syn_dom, _, y_syn_dom, _ = train_test_split(x_syn_dom, y_syn_dom, train_size=0.1, stratify=y_syn_dom, shuffle=True, random_state=seed)
+            # print("Warning: Using only small fraction of Syn data")
+            print(f'x_syn_dom.shape: {x_syn_dom.shape} | np.unique(y_syn_dom): {np.unique(y_syn_dom)} | np.unique(k_syn_dom): {np.unique(k_syn_dom)}')
+
+            # Load Dp data
+            x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp_te', domain)
+            print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
+
+            # Fine-tune on synthetic data and evaluate on Dp data
+            print('Fine-tuning on synthetic data...')
+            finetuned_model = fine_tune(df_model, x_syn_dom, y_syn_dom, num_epochs)
+            loss, acc, f1, cm = evaluate_model(finetuned_model, get_dataloader(x_dp_dom, y_dp_dom))
+            save_scores(domain, loss, acc, f1, name, dataset)
+            accs_run.append(acc)
+            f1s_run.append(f1)
+            print(f'Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
+            if total_cm is None:
+                total_cm = cm
+            else:
+                total_cm += cm
+
+        print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
+        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n\n")
+        accs.append(np.mean(accs_run))
+        f1s.append(np.mean(f1s_run))
+
+    print(f"Mean accuracy: {np.mean(accs):.4f} +- {np.std(accs):.4f}")
+    print(f"Mean F1: {np.mean(f1s):.4f} +- {np.std(f1s):.4f}\n")
+    total_cm = total_cm / num_runs
+    save_cm(total_cm, name, dataset)
 
 
 
@@ -220,7 +284,7 @@ def compute_TSTR_CORAL(dataset, num_epochs, num_runs, augment=False, coral_weigh
                 total_cm += cm
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
-        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
+        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n\n")
         accs.append(np.mean(accs_run))
         f1s.append(np.mean(f1s_run))
 
@@ -272,7 +336,7 @@ def compute_TSTR_PL(dataset):
                 print(f'Source class: {src_class} | Domain: {domain} | Loss: {loss:.4f} | Accuracy: {acc:.4f} | F1: {f1:.4f}\n')
 
         print(f"Mean accuracy for run {i}: {np.mean(accs_run):.4f} +- {np.std(accs_run):.4f}")
-        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n")
+        print(f"Mean F1 for run {i}: {np.mean(f1s_run):.4f} +- {np.std(f1s_run):.4f}\n\n")
         accs.append(np.mean(accs_run))
         f1s.append(np.mean(f1s_run))
 

@@ -161,7 +161,8 @@ def train_cv(x_train, y_train, num_epochs):
     f1s = []
     total_cm = None
 
-    for train_index, test_index in skf.split(x_train, y_train):
+    for fold, (train_index, test_index) in enumerate(skf.split(x_train, y_train)):
+        print(f"\tFold {fold+1}/{n_splits}")
         x_train_fold, x_test_fold = x_train[train_index], x_train[test_index]
         y_train_fold, y_test_fold = y_train[train_index], y_train[test_index]
 
@@ -178,6 +179,26 @@ def train_cv(x_train, y_train, num_epochs):
 
 
 
+def fine_tune(model, x_train, y_train, num_epochs):
+    # # Freeze feature extraction layers
+    # for name, param in model.named_parameters():
+    #     if 'conv' in name or 'bn' in name:
+    #         param.requires_grad = False
+
+    # Freeze feature extraction layers
+    for param in model.feature_extractor.parameters():
+        param.requires_grad = False
+
+    train_loader = get_dataloader(x_train, y_train, shuffle=True)
+
+    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-4)
+
+    trained_model = train_model(model, train_loader, optimizer, num_epochs)
+
+    return trained_model
+
+
+
 def pseudo_labeling(model, x, y, num_epochs, augment=False):
     raise ValueError
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -191,19 +212,3 @@ def pseudo_labeling(model, x, y, num_epochs, augment=False):
     x_pl = x_pl.detach().cpu().numpy()
 
     return train_and_test(x_pl, y_pl_pred, x_test, y_test, dataset, num_epochs=num_epochs, augment=augment, patience=patience)
-
-
-
-def fine_tune(model, x_train, y_train, num_epochs):
-    # Freeze feature extraction layers
-    for name, param in model.named_parameters():
-        if 'conv' in name or 'bn' in name:
-            param.requires_grad = False
-
-    train_loader = get_dataloader(x_train, y_train, shuffle=True)
-
-    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-5)
-
-    trained_model = train_model(model, train_loader, optimizer, num_epochs)
-
-    return trained_model

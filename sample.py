@@ -5,7 +5,7 @@ mode = 'sample'
 class_names = ['WAL', 'RUN', 'CLD', 'CLU']
 channel_names = ['X', 'Y', 'Z']
 
-dataset = 'realworld_mobiact'
+dataset = 'mobiact_realworld'
 
 if dataset == 'realworld_mobiact':
     num_df_domains = 15
@@ -14,9 +14,9 @@ elif dataset == 'mobiact_realworld':
     num_df_domains = 61
     num_dp_domains = 15
 
-syn_name = 'rwma0311'
+syn_name = 'marw0401'
 
-resume_iters = 190000
+resume_iters = 270000
 
 
 
