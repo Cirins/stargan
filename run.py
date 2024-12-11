@@ -7,7 +7,7 @@ channel_names = ['X', 'Y', 'Z']
 
 
 
-dataset = 'pamap_realworld'
+dataset = 'pamap_mobiact'
 
 
 
@@ -26,6 +26,14 @@ elif dataset == 'realworld_pamap':
 elif dataset == 'pamap_realworld':
     num_df_domains = 6
     num_dp_domains = 15
+
+elif dataset == 'mobiact_pamap':
+    num_df_domains = 61
+    num_dp_domains = 6
+
+elif dataset == 'pamap_mobiact':
+    num_df_domains = 6
+    num_dp_domains = 61
 
 
 
