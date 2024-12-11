@@ -36,14 +36,14 @@ def get_data(dataset, domains_set, domain=None):
 
 
 
-def get_dataloader(x, y, shuffle=False):
+def get_dataloader(x, y, shuffle=False, batch_size=32):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     x = torch.tensor(x, dtype=torch.float32, device=device)
     y = torch.tensor(y, dtype=torch.long, device=device)
 
     dataset = TensorDataset(x, y)
-    loader = DataLoader(dataset, batch_size=32, shuffle=shuffle)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
     return loader
 

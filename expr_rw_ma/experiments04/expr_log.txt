@@ -1,1 +1,11 @@
 01, Maxthon1/Waterfox1 -> 0.55, 0.50, 1.66
+
+02, Opera1, loss_td (binCE) -> 0.5481, 0.4734, 2.3080
+
+03, Iridium1, loss_td (WGAN) -> bad
+
+04, Brave1, loss_td (WGAN senza WGANsrc) -> bad
+
+05, Iron1, train_balanced, no loss_td -> bad
+
+06, Maxthon1, train_td_balanced, loss_td (WGAN) ->

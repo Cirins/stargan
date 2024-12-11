@@ -5,21 +5,36 @@ mode = 'train'
 class_names = ['WAL', 'RUN', 'CLD', 'CLU']
 channel_names = ['X', 'Y', 'Z']
 
-dataset = 'realworld_mobiact'
+
+
+dataset = 'pamap_realworld'
+
+
 
 if dataset == 'realworld_mobiact':
     num_df_domains = 15
     num_dp_domains = 61
+
 elif dataset == 'mobiact_realworld':
     num_df_domains = 61
     num_dp_domains = 15
+
+elif dataset == 'realworld_pamap':
+    num_df_domains = 15
+    num_dp_domains = 6
+
+elif dataset == 'pamap_realworld':
+    num_df_domains = 6
+    num_dp_domains = 15
+
+
 
 log_step = 100
 sample_step = 1000
 model_save_step = 10000
 eval_step = 10000
 
-resume_iters = 160000
+resume_iters = 0
 
 
 
@@ -34,6 +49,6 @@ subprocess.run(['python', 'main.py',
                 '--sample_step', str(sample_step),
                 '--model_save_step', str(model_save_step),
                 '--eval_step', str(eval_step),
-                '--resume_iters', str(resume_iters),
+                # '--resume_iters', str(resume_iters),
                 ])
 

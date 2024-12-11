@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch.utils import data
 import pickle
+from torch.utils.data import WeightedRandomSampler
 
 
 
@@ -82,12 +83,68 @@ class test_dataset(data.Dataset):
 
 
 
+class td_dataset(data.Dataset):
+    def __init__(self, dataset, class_names, num_df_domains, finetune=False):
+        
+        # Load the dataset
+        with open(f'data/splits/{dataset}_dp_map.pkl', 'rb') as f:
+            x, y, k = pickle.load(f)
+
+        if finetune:
+            raise NotImplementedError
+
+        self.X_td = x.astype(np.float32)
+        self.y_td = y.astype(np.int64)
+        print(f'X_td shape is {self.X_td.shape}')
+
+        classes_dict = {i: clss for i, clss in enumerate(class_names)}
+        for i in range(len(class_names)):
+            print(f'Number of {classes_dict[i]} samples: {len(y[y == i])}')
+
+    def __len__(self):
+        return len(self.y_td)
+    
+    def __getitem__(self, idx):
+        return self.X_td[idx], self.y_td[idx]
+
+
+
+def get_class_weights(y):
+    class_sample_count = np.bincount(y)
+    weight = 1. / class_sample_count
+    samples_weight = np.array([weight[t] for t in y])
+    return samples_weight
+
+
+
 def get_dataloaders(dataset, class_names, num_df_domains, batch_size, num_workers=2, finetune=False):
     """Create dataloaders for training and testing."""
     train_dataset_ = train_dataset(dataset, class_names, num_df_domains, finetune)
     test_dataset_ = test_dataset(dataset, class_names, num_df_domains)
+    td_dataset_ = td_dataset(dataset, class_names, num_df_domains)
 
-    train_loader = data.DataLoader(train_dataset_, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_loader = data.DataLoader(test_dataset_, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_loader = data.DataLoader(train_dataset_, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    test_loader = data.DataLoader(test_dataset_, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True)
+    td_loader = data.DataLoader(td_dataset_, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
 
-    return train_loader, test_loader
+    return train_loader, test_loader, td_loader
+
+
+
+# def get_dataloaders(dataset, class_names, num_df_domains, batch_size, num_workers=2, finetune=False):
+#     """Create dataloaders for training and testing."""
+#     train_dataset_ = train_dataset(dataset, class_names, num_df_domains, finetune)
+#     test_dataset_ = test_dataset(dataset, class_names, num_df_domains)
+#     td_dataset_ = td_dataset(dataset, class_names, num_df_domains)
+
+#     train_weights = get_class_weights(train_dataset_.y_train)
+#     train_sampler = WeightedRandomSampler(train_weights, len(train_weights))
+
+#     td_weights = get_class_weights(td_dataset_.y_td)
+#     td_sampler = WeightedRandomSampler(td_weights, len(td_weights))
+
+#     train_loader = data.DataLoader(train_dataset_, batch_size=batch_size, sampler=train_sampler, num_workers=num_workers, drop_last=True)
+#     test_loader = data.DataLoader(test_dataset_, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=True)
+#     td_loader = data.DataLoader(td_dataset_, batch_size=batch_size, sampler=td_sampler, num_workers=num_workers, drop_last=True)
+
+#     return train_loader, test_loader, td_loader

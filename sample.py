@@ -5,18 +5,32 @@ mode = 'sample'
 class_names = ['WAL', 'RUN', 'CLD', 'CLU']
 channel_names = ['X', 'Y', 'Z']
 
-dataset = 'mobiact_realworld'
+
+
+dataset = 'pamap_realworld'
+
+
 
 if dataset == 'realworld_mobiact':
     num_df_domains = 15
     num_dp_domains = 61
+
 elif dataset == 'mobiact_realworld':
     num_df_domains = 61
     num_dp_domains = 15
 
-syn_name = 'marw0401'
+elif dataset == 'realworld_pamap':
+    num_df_domains = 15
+    num_dp_domains = 6
 
-resume_iters = 270000
+elif dataset == 'pamap_realworld':
+    num_df_domains = 6
+    num_dp_domains = 15
+
+
+syn_name = 'parw0401'
+
+resume_iters = 150000
 
 
 

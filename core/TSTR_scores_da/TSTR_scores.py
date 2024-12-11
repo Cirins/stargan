@@ -260,20 +260,24 @@ def compute_TSTR_CORAL(dataset, num_epochs, num_runs, augment=False, coral_weigh
 
         # Load Df data
         x_df, y_df, k_df = get_data(dataset, 'df')
-        # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.01, stratify=y_df, shuffle=True, random_state=seed)
+        # x_df, _, y_df, _ = train_test_split(x_df, y_df, train_size=0.1, stratify=y_df, shuffle=True, random_state=2710)
         # print("Warning: Using only small fraction of Df data")
         print(f'x_df.shape: {x_df.shape} | np.unique(y_df): {np.unique(y_df)} | np.unique(k_df): {np.unique(k_df)}\n')
 
         for domain in range(config[dataset]['num_df_domains'], config[dataset]['num_df_domains'] + config[dataset]['num_dp_domains']):
             print(f"Domain: {domain}")
 
-            # Load Dp data
-            x_dp_dom, y_dp_dom, k_dp_dom = get_data(dataset, 'dp_te', domain)
-            print(f'x_dp_dom.shape: {x_dp_dom.shape} | np.unique(y_dp_dom): {np.unique(y_dp_dom)} | np.unique(k_dp_dom): {np.unique(k_dp_dom)}')
+            # Load Dp map data
+            x_dp_map, y_dp_map, k_dp_map = get_data(dataset, 'dp_map', domain)
+            print(f'x_dp_map.shape: {x_dp_map.shape} | np.unique(y_dp_map): {np.unique(y_dp_map)} | np.unique(k_dp_map): {np.unique(k_dp_map)}')
+
+            # Load Dp test data
+            x_dp_te, y_dp_te, k_dp_te = get_data(dataset, 'dp_te', domain)
+            print(f'x_dp_te.shape: {x_dp_te.shape} | np.unique(y_dp_te): {np.unique(y_dp_te)} | np.unique(k_dp_te): {np.unique(k_dp_te)}')
 
             # Train on Df data and Dp data with CORAL and evaluate on Dp data
             print('Training on Df data and Dp data with CORAL...')
-            loss, acc, f1, cm = train_and_test(x_df, y_df, x_dp_dom, y_dp_dom, num_epochs, augment=augment, coral_weight=coral_weight)
+            loss, acc, f1, cm = train_and_test(x_df, y_df, x_dp_te, y_dp_te, num_epochs, augment=augment, coral_weight=coral_weight, coral_train=x_dp_map)
             save_scores(domain, loss, acc, f1, name, dataset)
             accs_run.append(acc)
             f1s_run.append(f1)

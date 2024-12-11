@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 class Solver(object):
     """Solver for training and testing StarGAN."""
 
-    def __init__(self, train_loader, test_loader, args):
+    def __init__(self, train_loader, test_loader, td_loader, args):
         """Initialize configurations."""
 
         self.args = args
@@ -24,6 +24,7 @@ class Solver(object):
         # Data loader.
         self.train_loader = train_loader
         self.test_loader = test_loader
+        self.td_loader = td_loader
 
         # Model configurations.
         self.num_timesteps = args.num_timesteps
@@ -94,8 +95,8 @@ class Solver(object):
         self.log_file = os.path.join(self.log_dir, 'log.csv')
         file_exists = os.path.isfile(self.log_file)
         with open(self.log_file, 'a', newline='') as csvfile:
-            d_keys = ['loss_real', 'loss_fake', 'loss_cls', 'loss_dom', 'loss_gp']
-            g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom', 'loss_rot']
+            d_keys = ['loss_real', 'loss_fake', 'loss_cls', 'loss_dom', 'loss_gp', 'loss_td_real', 'loss_td_fake']
+            g_keys = ['loss_fake', 'loss_rec', 'loss_cls', 'loss_dom', 'loss_rot', 'loss_td_fake']
             fieldnames = ['Elapsed Time', 'Iteration'] + [f'D/{key}' for key in d_keys] + [f'G/{key}' for key in g_keys]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
@@ -337,12 +338,23 @@ class Solver(object):
         return R
 
     def augment_batch(self, x_real):
-        """Apply random rotation to the batch of real time series."""
+        """Apply random augmentations to the batch of real time series."""
+        # Rotation
         min_val, max_val = -19.61, 19.61
         x_real_r = x_real * (max_val - min_val) + min_val  # De-normalize
         R = self.random_rotation_matrix()
         x_real_r = torch.matmul(R, x_real_r)  # Apply rotation
         x_real_r = (x_real_r - min_val) / (max_val - min_val)  # Re-normalize
+        # # Scaling
+        # alpha = 0.4 * torch.rand(1, device=self.device) + 0.8
+        # x_real_r = alpha * x_real_r
+        # # Translation
+        # beta = 0.2 * torch.rand(1, device=self.device) - 0.1
+        # x_real_r = x_real_r + beta
+        # # Jittering
+        # x_real_r = x_real_r + 0.01 * torch.randn_like(x_real_r)
+        # # Clipping
+        # x_real_r = torch.clamp(x_real_r, 0, 1)
         return x_real_r
 
     def train(self):
@@ -350,6 +362,7 @@ class Solver(object):
         # Set data loaders.
         train_loader = self.train_loader
         test_loader = self.test_loader
+        td_loader = self.td_loader
 
         # Learning rate cache for decaying.
         g_lr = self.g_lr
@@ -393,6 +406,13 @@ class Solver(object):
                 data_iter = iter(train_loader)
                 x_real, y_src, k_src = next(data_iter)
 
+            # Fetch target domain time series. 
+            try:
+                x_td, y_td = next(data_iter_td)
+            except:
+                data_iter_td = iter(td_loader)
+                x_td, y_td = next(data_iter_td)
+
             # Generate target class labels randomly.
             rand_idx = torch.randperm(y_src.size(0))
             y_trg = y_src[rand_idx]
@@ -406,6 +426,8 @@ class Solver(object):
             y_src_oh = y_src_oh.to(self.device)
             y_trg_oh = y_trg_oh.to(self.device)
             k_src = k_src.to(self.device)
+            x_td = x_td.to(self.device)
+            y_td = y_td.to(self.device)
 
             if self.augment:
                 x_real_r = self.augment_batch(x_real)
@@ -417,24 +439,37 @@ class Solver(object):
             # =================================================================================== #
 
             # Compute loss with real time series.
-            out_src, out_cls, out_dom = self.D(x_real_r)
+            out_src, out_cls, out_dom, _ = self.D(x_real_r)
             d_loss_real = self.compute_gan_loss(out_src, 1)
             d_loss_cls = F.cross_entropy(out_cls, y_src)
             d_loss_dom = F.cross_entropy(out_dom, k_src)
 
             # Compute loss with fake time series.
             x_fake = self.G(x_real_r, y_trg_oh)
-            out_src, _, _ = self.D(x_fake.detach())
+            out_src, _, _, _ = self.D(x_fake.detach())
             d_loss_fake = self.compute_gan_loss(out_src, 0)
+
+            # Compute loss with real target domain time series.
+            _, _, _, out_td = self.D(x_td)
+            d_loss_td_real = self.compute_gan_loss(out_td, 1)
+
+            # Compute loss with fake target domain time series.
+            x_fake_td = self.G(x_td, y_trg_oh)
+            _, _, _, out_td = self.D(x_fake_td.detach())
+            d_loss_td_fake = self.compute_gan_loss(out_td, 0)
 
             # Compute loss for gradient penalty.
             alpha = torch.rand(x_real_r.size(0), 1, 1).to(self.device)
             x_hat = (alpha * x_real_r.data + (1 - alpha) * x_fake.data).requires_grad_(True)
-            out_src, _, _ = self.D(x_hat)
+            out_src, _, _, _ = self.D(x_hat)
             d_loss_gp = self.gradient_penalty(out_src, x_hat)
+            # x_td_hat = (alpha * x_td.data + (1 - alpha) * x_fake_td.data).requires_grad_(True)
+            # _, _, _, out_td = self.D(x_td_hat)
+            # d_loss_gp = self.gradient_penalty(out_td, x_td_hat)
 
             # Backward and optimize.
             d_loss = d_loss_real + d_loss_fake + self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + lambda_dom * d_loss_dom
+            # d_loss = self.lambda_cls * d_loss_cls + self.lambda_gp * d_loss_gp + lambda_dom * d_loss_dom + d_loss_td_real + d_loss_td_fake
             self.reset_grad()
             d_loss.backward()
             self.d_optimizer.step()
@@ -446,6 +481,8 @@ class Solver(object):
             loss['D/loss_cls'] = d_loss_cls.item()
             loss['D/loss_dom'] = d_loss_dom.item()
             loss['D/loss_gp'] = d_loss_gp.item()
+            loss['D/loss_td_real'] = d_loss_td_real.item()
+            loss['D/loss_td_fake'] = d_loss_td_fake.item()
             
             # =================================================================================== #
             #                               3. Train the generator                                #
@@ -454,7 +491,7 @@ class Solver(object):
             if (i+1) % self.n_critic == 0:
                 # Original-to-target class.
                 x_fake = self.G(x_real_r, y_trg_oh)
-                out_src, out_cls, out_dom = self.D(x_fake)
+                out_src, out_cls, out_dom, _ = self.D(x_fake)
                 g_loss_fake = self.compute_gan_loss(out_src, 1)
                 g_loss_cls = F.cross_entropy(out_cls, y_trg)
                 g_loss_dom = F.cross_entropy(out_dom, k_src)
@@ -467,8 +504,14 @@ class Solver(object):
                 x_real_r_map = self.G(x_real_r, y_src_oh)
                 g_loss_rot = torch.mean(torch.abs(x_real_r - x_real_r_map))
 
+                # Compute loss with fake target domain time series.
+                x_fake_td = self.G(x_td, y_trg_oh)
+                _, _, _, out_td = self.D(x_fake_td)
+                g_loss_td_fake = self.compute_gan_loss(out_td, 1)
+
                 # Backward and optimize.
                 g_loss = g_loss_fake + self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot
+                # g_loss = self.lambda_rec * g_loss_rec + self.lambda_cls * g_loss_cls + lambda_dom * g_loss_dom + self.lambda_rot * g_loss_rot + g_loss_td_fake
                 self.reset_grad()
                 g_loss.backward()
                 self.g_optimizer.step()
@@ -479,6 +522,7 @@ class Solver(object):
                 loss['G/loss_cls'] = g_loss_cls.item()
                 loss['G/loss_dom'] = g_loss_dom.item()
                 loss['G/loss_rot'] = g_loss_rot.item()
+                loss['G/loss_td_fake'] = g_loss_td_fake.item()
 
             # =================================================================================== #
             #                                 4. Miscellaneous                                    #
@@ -726,53 +770,25 @@ class Solver(object):
         # Load the trained generator.
         self.restore_model(self.resume_iters)
 
-        # Load the dataset
         with open(f'data/{self.dataset}.pkl', 'rb') as f:
             x, y, k = pickle.load(f)
-
         print(f'Loaded full dataset with shape {x.shape}, from {len(set(k))} domains and {len(set(y))} classes')
-        
-        # Filter only df domains
-        mask_df = (k < self.num_df_domains)
-        x_df = x[mask_df]
-        k_df = k[mask_df]
-        y_df = y[mask_df]
 
+        with open(f'data/splits/{self.dataset}_df.pkl', 'rb') as f:
+            x_df, y_df, k_df = pickle.load(f)
         print(f'Loaded Df data with shape {x_df.shape}, from {len(set(k_df))} domains and {len(set(y_df))} classes')
 
-        # Save the data
-        with open(f'data/splits/{self.dataset}_df.pkl', 'wb') as f:
-            pickle.dump((x_df, y_df, k_df), f)
-        
-        # Filter only dp domains
-        mask_dp = (k >= self.num_df_domains)
-        x_dp = x[mask_dp]
-        k_dp = k[mask_dp]
-        y_dp = y[mask_dp]
-
+        with open(f'data/splits/{self.dataset}_dp.pkl', 'rb') as f:
+            x_dp, y_dp, k_dp = pickle.load(f)
         print(f'Loaded Dp data with shape {x_dp.shape}, from {len(set(k_dp))} domains and {len(set(y_dp))} classes')
 
-        # Save the data
-        with open(f'data/splits/{self.dataset}_dp.pkl', 'wb') as f:
-            pickle.dump((x_dp, y_dp, k_dp), f)
-
-        if self.dataset == 'realworld_mobiact':
-            n_obs = 10
-        elif self.dataset == 'mobiact_realworld':
-            n_obs = 50
-        x_dp_map, x_dp_te, y_dp_map, y_dp_te, k_dp_map, k_dp_te = self.custom_train_test_split(x_dp, y_dp, k_dp, n_obs)
-
+        with open(f'data/splits/{self.dataset}_dp_map.pkl', 'rb') as f:
+            x_dp_map, y_dp_map, k_dp_map = pickle.load(f)
         print(f'Divided Dp data into map with shape {x_dp_map.shape}, from {len(set(k_dp_map))} domains and {len(set(y_dp_map))} classes')
 
-        # Save the data
-        with open(f'data/splits/{self.dataset}_dp_map.pkl', 'wb') as f:
-            pickle.dump((x_dp_map, y_dp_map, k_dp_map), f)
-
+        with open(f'data/splits/{self.dataset}_dp_te.pkl', 'rb') as f:
+            x_dp_te, y_dp_te, k_dp_te = pickle.load(f)
         print(f'And into test with shape {x_dp_te.shape}, from {len(set(k_dp_te))} domains and {len(set(y_dp_te))} classes')
-
-        # Save the data
-        with open(f'data/splits/{self.dataset}_dp_te.pkl', 'wb') as f:
-            pickle.dump((x_dp_te, y_dp_te, k_dp_te), f)
 
         # Create tensors
         x_dp_map = torch.tensor(x_dp_map, dtype=torch.float32, device=self.device)

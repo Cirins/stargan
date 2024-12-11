@@ -28,10 +28,10 @@ def main(args):
     os.makedirs(args.results_dir, exist_ok=True)
 
     # Data loaders.
-    train_loader, test_loader = get_dataloaders(args.dataset, args.class_names, args.num_df_domains, args.batch_size, args.num_workers, args.finetune)    
+    train_loader, test_loader, td_loader = get_dataloaders(args.dataset, args.class_names, args.num_df_domains, args.batch_size, args.num_workers, args.finetune)    
 
     # Solver for training and testing StarGAN.
-    solver = Solver(train_loader, test_loader, args)
+    solver = Solver(train_loader, test_loader, td_loader, args)
 
     if args.mode == 'train':
         solver.train()
@@ -58,7 +58,10 @@ if __name__ == '__main__':
     parser.add_argument('--loss_type', type=str, default='wgan-gp', choices=['gan', 'lsgan', 'wgan-gp'], help='type of GAN loss')
     
     # Training configuration.
-    parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld_mobiact', 'mobiact_realworld'], help='dataset name')
+    parser.add_argument('--dataset', type=str, default='realworld_mobiact', choices=['realworld_mobiact', 
+                                                                                     'mobiact_realworld', 
+                                                                                     'realworld_pamap',
+                                                                                     'pamap_realworld'], help='dataset name')
     parser.add_argument('--class_names', type=str, required=True, help='class names')
     parser.add_argument('--channel_names', type=str, required=True, help='channel names')
     parser.add_argument('--num_df_domains', type=int, required=True, help='number of domains in Df')

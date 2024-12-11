@@ -72,11 +72,9 @@ def train_model(model, train_loader, optimizer, num_epochs, augment=False):
 
 
 
-def train_model_coral(model, train_loader, x_test, optimizer, num_epochs, coral_weight, augment=False):
+def train_model_coral(model, train_loader, coral_loader, optimizer, num_epochs, coral_weight, augment=False):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-
-    x_test = torch.tensor(x_test, dtype=torch.float32, device=device).to(device)
 
     loss_fn = nn.CrossEntropyLoss()
     loss_coral = CORAL()
@@ -86,14 +84,21 @@ def train_model_coral(model, train_loader, x_test, optimizer, num_epochs, coral_
         total_loss = 0
         total_class_loss = 0
         total_coral_loss = 0
+        coral_iter = iter(coral_loader)
         for x_batch, y_batch in train_loader:
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+            try:
+                x_coral, _ = next(coral_iter)
+            except StopIteration:
+                coral_iter = iter(coral_loader)
+                x_coral, _ = next(coral_iter)
+            x_coral = x_coral.to(device)
             if augment:
                 x_batch = augment_batch(x_batch)
             optimizer.zero_grad()
             outputs = model(x_batch)
             class_loss = loss_fn(outputs, y_batch)
-            coral_loss = loss_coral(model.feature_extractor(x_batch), model.feature_extractor(x_test))
+            coral_loss = loss_coral(model.feature_extractor(x_batch), model.feature_extractor(x_coral))
             loss = class_loss + coral_weight * coral_loss
             loss.backward()
             optimizer.step()
@@ -127,7 +132,7 @@ def train_only(x_train, y_train, num_epochs, augment=False):
 
 
 
-def train_and_test(x_train, y_train, x_test, y_test, num_epochs, augment=False, coral_weight=0):
+def train_and_test(x_train, y_train, x_test, y_test, num_epochs, augment=False, coral_weight=0, coral_train=None):
     assert np.array_equal(np.unique(y_train), np.unique(y_test)), f"Training and test labels do not match: {np.unique(y_train)} vs {np.unique(y_test)}"
     assert len(np.unique(y_train)) == 4, f"Labels are not complete: {np.unique(y_train)}"
 
@@ -142,7 +147,8 @@ def train_and_test(x_train, y_train, x_test, y_test, num_epochs, augment=False, 
     if coral_weight == 0:
         trained_model = train_model(model, train_loader, optimizer, num_epochs, augment)
     else:
-        trained_model = train_model_coral(model, train_loader, x_test, optimizer, num_epochs, coral_weight, augment)
+        coral_loader = get_dataloader(coral_train, np.zeros(len(coral_train)), shuffle=True, batch_size=100)
+        trained_model = train_model_coral(model, train_loader, coral_loader, optimizer, num_epochs, coral_weight, augment)
 
     test_loss, test_accuracy, test_f1, test_cm = evaluate_model(trained_model, test_loader)
 

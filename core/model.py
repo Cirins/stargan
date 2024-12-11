@@ -95,10 +95,12 @@ class Discriminator(nn.Module):
         self.layers['src'] = nn.Conv1d(curr_dim, 1, kernel_size=2, stride=1, padding=0, bias=False)
         self.layers['cls'] = nn.Conv1d(curr_dim, num_classes, kernel_size=kernel_size, bias=False)
         self.layers['dom'] = nn.Conv1d(curr_dim, num_domains, kernel_size=kernel_size, bias=False)
+        self.layers['td'] = nn.Conv1d(curr_dim, 1, kernel_size=2, stride=1, padding=0, bias=False)
         
     def forward(self, x):
         h = self.layers['main'](x)
         out_src = self.layers['src'](h)
         out_cls = self.layers['cls'](h)
         out_dom = self.layers['dom'](h)
-        return out_src, out_cls.view(out_cls.size(0), out_cls.size(1)), out_dom.view(out_dom.size(0), out_dom.size(1))
+        out_td = self.layers['td'](h)
+        return out_src, out_cls.view(out_cls.size(0), out_cls.size(1)), out_dom.view(out_dom.size(0), out_dom.size(1)), out_td
