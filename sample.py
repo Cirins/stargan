@@ -36,7 +36,7 @@ elif dataset == 'pamap_mobiact':
     num_dp_domains = 61
 
 
-syn_name = 'pama0401'
+syn_name = 'pama0401_wal'
 
 resume_iters = 110000
 

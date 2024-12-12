@@ -558,172 +558,6 @@ class Solver(object):
                     self.update_lr(g_lr, d_lr)
                     print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(g_lr, d_lr))
 
-    # @torch.no_grad()
-    # def sample(self, name):
-    #     """Sample time series using the trained generator."""
-    #     print('Start sampling...')
-    #     # Load the trained generator.
-    #     self.restore_model(self.resume_iters)
-
-    #     # Load the dataset
-    #     with open(f'data/{self.dataset}.pkl', 'rb') as f:
-    #         x, y, k = pickle.load(f)
-
-    #     print(f'Loaded full dataset with shape {x.shape}, from {len(set(k))} domains and {len(set(y))} classes')
-        
-    #     # Filter only df domains
-    #     mask_df = (k < self.num_df_domains)
-    #     x_df = x[mask_df]
-    #     k_df = k[mask_df]
-    #     y_df = y[mask_df]
-
-    #     print(f'Loaded Df data with shape {x_df.shape}, from {len(set(k_df))} domains and {len(set(y_df))} classes')
-
-    #     # Save the data
-    #     with open(f'data/{self.dataset}_df.pkl', 'wb') as f:
-    #         pickle.dump((x_df, y_df, k_df), f)
-        
-    #     # Filter only class 0 samples and dp domains
-    #     mask_dp_0 = (y == 0) & (k >= self.num_df_domains)
-    #     x_dp_0 = x[mask_dp_0]
-    #     k_dp_0 = k[mask_dp_0]
-    #     y_dp_0 = y[mask_dp_0]
-
-    #     print(f'Loaded class 0 Dp data with shape {x_dp_0.shape}, from {len(set(k_dp_0))} domains and {len(set(y_dp_0))} classes')
-
-    #     x_dp_0_map, x_dp_0_te, k_dp_0_map, k_dp_0_te, y_dp_0_map, y_dp_0_te = train_test_split(x_dp_0, k_dp_0, y_dp_0, test_size=0.2, random_state=2710, stratify=k_dp_0, shuffle=True)
-
-    #     print(f'Divided class 0 Dp data into map with shape {x_dp_0_map.shape}, from {len(set(k_dp_0_map))} domains and {len(set(y_dp_0_map))} classes')
-
-    #     # Save the data
-    #     with open(f'data/{self.dataset}_dp0map.pkl', 'wb') as f:
-    #         pickle.dump((x_dp_0_map, y_dp_0_map, k_dp_0_map), f)
-
-    #     print(f'And into test with shape {x_dp_0_te.shape}, from {len(set(k_dp_0_te))} domains and {len(set(y_dp_0_te))} classes')
-
-    #     # Create tensors
-    #     x_dp_0_map = torch.tensor(x_dp_0_map, dtype=torch.float32, device=self.device)
-    #     k_dp_0_map = torch.tensor(k_dp_0_map, dtype=torch.long, device=self.device)
-    #     y_dp_0_map = torch.tensor(y_dp_0_map, dtype=torch.long, device=self.device)
-
-    #     x_syn, y_syn, k_syn = [x_dp_0_map], [y_dp_0_map], [k_dp_0_map]
-
-    #     # Map x to the target classes
-    #     for y_trg in range(1, self.num_classes):
-    #         print(f'Mapping class 0 to class {y_trg}...')
-    #         y_trg_tensor = torch.tensor([y_trg] * x_dp_0_map.size(0), device=self.device)
-    #         y_trg_oh = self.label2onehot(y_trg_tensor, self.num_classes)
-    #         x_syn.append(self.G(x_dp_0_map, y_trg_oh))
-    #         y_syn.append(y_trg_tensor)
-    #         k_syn.append(k_dp_0_map)
-            
-    #     x_syn = torch.cat(x_syn, dim=0).detach().cpu().numpy()
-    #     y_syn = torch.cat(y_syn, dim=0).detach().cpu().numpy()
-    #     k_syn = torch.cat(k_syn, dim=0).detach().cpu().numpy()
-
-    #     print(f'Loaded Syn data with shape {x_syn.shape}, from {len(set(k_syn))} domains and {len(set(y_syn))} classes')
-
-    #     # Save the data
-    #     with open(f'data/{self.dataset}_{name}.pkl', 'wb') as f:
-    #         pickle.dump((x_syn, y_syn, k_syn), f)
-        
-    #     # Filter not class 0 samples and dp domains
-    #     mask_dp_not0 = (y != 0) & (k >= self.num_df_domains)
-    #     x_dp_not0 = x[mask_dp_not0]
-    #     k_dp_not0 = k[mask_dp_not0]
-    #     y_dp_not0 = y[mask_dp_not0]
-
-    #     print(f'Loaded classes not0 Dp data with shape {x_dp_not0.shape}, from {len(set(k_dp_not0))} domains and {len(set(y_dp_not0))} classes')
-
-    #     x_dp = np.concatenate([x_dp_0_te, x_dp_not0], axis=0)
-    #     y_dp = np.concatenate([y_dp_0_te, y_dp_not0], axis=0)
-    #     k_dp = np.concatenate([k_dp_0_te, k_dp_not0], axis=0)
-
-    #     print(f'Loaded Dp data with shape {x_dp.shape}, from {len(set(k_dp))} domains and {len(set(y_dp))} classes')
-
-    #     # Save the data
-    #     with open(f'data/{self.dataset}_dp.pkl', 'wb') as f:
-    # #         pickle.dump((x_dp, y_dp, k_dp), f)
-
-            
-
-    # @torch.no_grad()
-    # def sample(self, name):
-    #     """Sample time series using the trained generator."""
-    #     print('Start sampling...')
-    #     # Load the trained generator.
-    #     self.restore_model(self.resume_iters)
-
-    #     # Load the dataset
-    #     with open(f'data/{self.dataset}.pkl', 'rb') as f:
-    #         x, y, k = pickle.load(f)
-
-    #     print(f'Loaded full dataset with shape {x.shape}, from {len(set(k))} domains and {len(set(y))} classes')
-        
-    #     # Filter only df domains
-    #     mask_df = (k < self.num_df_domains)
-    #     x_df = x[mask_df]
-    #     k_df = k[mask_df]
-    #     y_df = y[mask_df]
-
-    #     print(f'Loaded Df data with shape {x_df.shape}, from {len(set(k_df))} domains and {len(set(y_df))} classes')
-
-    #     # Save the data
-    #     with open(f'data/splits/{self.dataset}_df.pkl', 'wb') as f:
-    #         pickle.dump((x_df, y_df, k_df), f)
-        
-    #     # Filter only dp domains
-    #     mask_dp = (k >= self.num_df_domains)
-    #     x_dp = x[mask_dp]
-    #     k_dp = k[mask_dp]
-    #     y_dp = y[mask_dp]
-
-    #     print(f'Loaded Dp data with shape {x_dp.shape}, from {len(set(k_dp))} domains and {len(set(y_dp))} classes')
-
-    #     # Save the data
-    #     with open(f'data/splits/{self.dataset}_dp.pkl', 'wb') as f:
-    #         pickle.dump((x_dp, y_dp, k_dp), f)
-
-    #     x_dp_map, x_dp_te, k_dp_map, k_dp_te, y_dp_map, y_dp_te = train_test_split(x_dp, k_dp, y_dp, test_size=0.5, random_state=2710,
-    #                                                                                stratify=np.array(list(zip(y_dp, k_dp))), shuffle=True)
-
-    #     print(f'Divided Dp data into map with shape {x_dp_map.shape}, from {len(set(k_dp_map))} domains and {len(set(y_dp_map))} classes')
-
-    #     # Save the data
-    #     with open(f'data/splits/{self.dataset}_dp_map.pkl', 'wb') as f:
-    #         pickle.dump((x_dp_map, y_dp_map, k_dp_map), f)
-
-    #     print(f'And into test with shape {x_dp_te.shape}, from {len(set(k_dp_te))} domains and {len(set(y_dp_te))} classes')
-
-    #     # Save the data
-    #     with open(f'data/splits/{self.dataset}_dp_te.pkl', 'wb') as f:
-    #         pickle.dump((x_dp_te, y_dp_te, k_dp_te), f)
-
-    #     # Create tensors
-    #     x_dp_map = torch.tensor(x_dp_map, dtype=torch.float32, device=self.device)
-    #     k_dp_map = torch.tensor(k_dp_map, dtype=torch.long, device=self.device)
-    #     y_dp_map = torch.tensor(y_dp_map, dtype=torch.long, device=self.device)
-
-    #     # Map x to the target classes
-    #     x_syn, y_syn, k_syn = [], [], []
-    #     for y_trg in range(0, self.num_classes):
-    #         print(f'Mapping to class {y_trg}...')
-    #         y_trg_tensor = torch.tensor([y_trg] * x_dp_map.size(0), device=self.device)
-    #         y_trg_oh = self.label2onehot(y_trg_tensor, self.num_classes)
-    #         x_syn.append(self.G(x_dp_map, y_trg_oh))
-    #         y_syn.append(y_trg_tensor)
-    #         k_syn.append(k_dp_map)
-            
-    #     x_syn = torch.cat(x_syn, dim=0).detach().cpu().numpy()
-    #     y_syn = torch.cat(y_syn, dim=0).detach().cpu().numpy()
-    #     k_syn = torch.cat(k_syn, dim=0).detach().cpu().numpy()
-
-    #     print(f'Loaded Syn data with shape {x_syn.shape}, from {len(set(k_syn))} domains and {len(set(y_syn))} classes')
-
-    #     # Save the data
-    #     with open(f'data/splits/{self.dataset}_{name}.pkl', 'wb') as f:
-    #         pickle.dump((x_syn, y_syn, k_syn), f)
-
 
     def custom_train_test_split(self, x, y, k, n_obs):
         # Combine y and k to identify unique combinations
@@ -794,6 +628,64 @@ class Solver(object):
         x_dp_map = torch.tensor(x_dp_map, dtype=torch.float32, device=self.device)
         k_dp_map = torch.tensor(k_dp_map, dtype=torch.long, device=self.device)
         y_dp_map = torch.tensor(y_dp_map, dtype=torch.long, device=self.device)
+
+        # Map x to the target classes
+        x_syn, y_syn, k_syn = [], [], []
+        for y_trg in range(0, self.num_classes):
+            print(f'Mapping to class {y_trg}...')
+            y_trg_tensor = torch.tensor([y_trg] * x_dp_map.size(0), device=self.device)
+            y_trg_oh = self.label2onehot(y_trg_tensor, self.num_classes)
+            x_syn.append(self.G(x_dp_map, y_trg_oh))
+            y_syn.append(y_trg_tensor)
+            k_syn.append(k_dp_map)
+            
+        x_syn = torch.cat(x_syn, dim=0).detach().cpu().numpy()
+        y_syn = torch.cat(y_syn, dim=0).detach().cpu().numpy()
+        k_syn = torch.cat(k_syn, dim=0).detach().cpu().numpy()
+
+        print(f'Loaded Syn data with shape {x_syn.shape}, from {len(set(k_syn))} domains and {len(set(y_syn))} classes')
+
+        # Save the data
+        with open(f'data/splits/{self.dataset}_{name}.pkl', 'wb') as f:
+            pickle.dump((x_syn, y_syn, k_syn), f)
+
+            
+
+    @torch.no_grad()
+    def sample_wal(self, name):
+        """Sample time series using the trained generator."""
+        print('Start sampling...')
+        # Load the trained generator.
+        self.restore_model(self.resume_iters)
+
+        with open(f'data/{self.dataset}.pkl', 'rb') as f:
+            x, y, k = pickle.load(f)
+        print(f'Loaded full dataset with shape {x.shape}, from {len(set(k))} domains and {len(set(y))} classes')
+
+        with open(f'data/splits/{self.dataset}_df.pkl', 'rb') as f:
+            x_df, y_df, k_df = pickle.load(f)
+        print(f'Loaded Df data with shape {x_df.shape}, from {len(set(k_df))} domains and {len(set(y_df))} classes')
+
+        with open(f'data/splits/{self.dataset}_dp.pkl', 'rb') as f:
+            x_dp, y_dp, k_dp = pickle.load(f)
+        print(f'Loaded Dp data with shape {x_dp.shape}, from {len(set(k_dp))} domains and {len(set(y_dp))} classes')
+
+        with open(f'data/splits/{self.dataset}_dp_map.pkl', 'rb') as f:
+            x_dp_map, y_dp_map, k_dp_map = pickle.load(f)
+        print(f'Divided Dp data into map with shape {x_dp_map.shape}, from {len(set(k_dp_map))} domains and {len(set(y_dp_map))} classes')
+
+        with open(f'data/splits/{self.dataset}_dp_te.pkl', 'rb') as f:
+            x_dp_te, y_dp_te, k_dp_te = pickle.load(f)
+        print(f'And into test with shape {x_dp_te.shape}, from {len(set(k_dp_te))} domains and {len(set(y_dp_te))} classes')
+
+        mask_dp_map_wal = y_dp_map == 0
+        x_dp_map_wal, y_dp_map_wal, k_dp_map_wal = x_dp_map[mask_dp_map_wal], y_dp_map[mask_dp_map_wal], k_dp_map[mask_dp_map_wal]
+        print(f'Extracted from Dp map data wal data with shape {x_dp_map_wal.shape}, from {len(set(k_dp_map_wal))} domains and {len(set(y_dp_map_wal))} classes')
+
+        # Create tensors
+        x_dp_map = torch.tensor(x_dp_map_wal, dtype=torch.float32, device=self.device)
+        k_dp_map = torch.tensor(k_dp_map_wal, dtype=torch.long, device=self.device)
+        y_dp_map = torch.tensor(y_dp_map_wal, dtype=torch.long, device=self.device)
 
         # Map x to the target classes
         x_syn, y_syn, k_syn = [], [], []
