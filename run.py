@@ -9,6 +9,8 @@ channel_names = ['X', 'Y', 'Z']
 
 dataset = 'pamap_mobiact'
 
+augment = False
+
 
 
 if dataset == 'realworld_mobiact':
@@ -49,6 +51,7 @@ resume_iters = 0
 subprocess.run(['python', 'main.py',
                 '--mode', mode,
                 '--dataset', dataset,
+                '--augment', str(augment),
                 '--class_names', ' '.join(class_names),
                 '--channel_names', ' '.join(channel_names),
                 '--num_df_domains', str(num_df_domains),
